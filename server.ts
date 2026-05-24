@@ -130,6 +130,71 @@ function extractYouTubeVideoId(input: string): string | null {
   }
 }
 
+function hasKoreanText(value: string): boolean {
+  return /[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(value);
+}
+
+function fallbackTranslateSearchQuery(query: string): string {
+  const normalized = query.trim();
+  const dictionary: Record<string, string> = {
+    "착한 아이 증후군": "people pleasing syndrome",
+    "관계 피로": "relationship burnout",
+    "무기력증": "emotional numbness and burnout",
+    "외로움": "loneliness psychology",
+    "불안": "anxiety psychology",
+    "자존감": "self esteem psychology",
+    "가스라이팅": "gaslighting psychology",
+    "회피형": "avoidant attachment",
+    "애착": "attachment theory",
+    "우울": "depression psychology",
+    "번아웃": "burnout psychology"
+  };
+
+  for (const [ko, en] of Object.entries(dictionary)) {
+    if (normalized.includes(ko)) return en;
+  }
+
+  return `${normalized} psychology self improvement`;
+}
+
+async function getEffectiveSearchQuery(query: string, market: string, customGeminiApiKey?: string): Promise<{ query: string; translated: boolean; translationNote?: string }> {
+  const cleanQuery = query.trim();
+  if (market !== "US" || !hasKoreanText(cleanQuery)) {
+    return { query: cleanQuery, translated: false };
+  }
+
+  const hasGeminiKey = (customGeminiApiKey && customGeminiApiKey.trim() !== "") || (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== "");
+  if (!hasGeminiKey) {
+    return {
+      query: fallbackTranslateSearchQuery(cleanQuery),
+      translated: true,
+      translationNote: "Used local fallback translation because Gemini API key is not configured."
+    };
+  }
+
+  try {
+    const ai = getGeminiClient(customGeminiApiKey);
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: `Translate this Korean YouTube psychology trend search query into a natural English query for the US/global YouTube market.
+Return only the search query, no quotes and no explanation.
+Korean query: ${cleanQuery}`
+    });
+    const translated = (response.text || "").replace(/^["']|["']$/g, "").trim();
+    return {
+      query: translated || fallbackTranslateSearchQuery(cleanQuery),
+      translated: true,
+      translationNote: translated ? "Translated by Gemini for US/global YouTube search." : "Used local fallback translation after empty Gemini response."
+    };
+  } catch (error: any) {
+    return {
+      query: fallbackTranslateSearchQuery(cleanQuery),
+      translated: true,
+      translationNote: `Used local fallback translation because Gemini translation failed: ${error?.message || "unknown error"}`
+    };
+  }
+}
+
 // Graceful Offline Fallback Generator for the Trojan Horse Planning & Script Engine in case of Gemini Quota limits (429)
 function generateFusionFallback(body: any): any {
   const { 
@@ -459,7 +524,8 @@ app.post("/api/youtube-search", async (req, res) => {
     durationFilter = "all",
     dateFilter = "all",
     maxResults = 5,
-    customApiKey
+    customApiKey,
+    customGeminiApiKey
   } = req.body || {};
 
   if (!query || !String(query).trim()) {
@@ -467,14 +533,18 @@ app.post("/api/youtube-search", async (req, res) => {
     return;
   }
 
+  const effectiveSearch = await getEffectiveSearchQuery(String(query), String(market), customGeminiApiKey);
   const youtubeKey = getYouTubeKey(customApiKey);
   if (!youtubeKey) {
     res.json({
       isRealData: false,
-      searchSummary: "No YouTube API key was configured, so simulated benchmark data is being shown.",
+      searchSummary: `No YouTube API key was configured, so simulated benchmark data is being shown. Search query used: "${effectiveSearch.query}".`,
       opportunityFormula: "Use the simulated result to shape the concept, then add a YouTube Data API key for live trend validation.",
-      videos: buildFallbackVideos(String(query)),
-      youtubeError: "YOUTUBE_API_KEY is missing."
+      videos: buildFallbackVideos(effectiveSearch.query),
+      youtubeError: "YOUTUBE_API_KEY is missing.",
+      effectiveQuery: effectiveSearch.query,
+      wasTranslated: effectiveSearch.translated,
+      translationNote: effectiveSearch.translationNote || null
     });
     return;
   }
@@ -491,7 +561,7 @@ app.post("/api/youtube-search", async (req, res) => {
     const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
     searchUrl.searchParams.set("part", "snippet");
     searchUrl.searchParams.set("type", "video");
-    searchUrl.searchParams.set("q", String(query));
+    searchUrl.searchParams.set("q", effectiveSearch.query);
     searchUrl.searchParams.set("regionCode", market === "US" ? "US" : "KR");
     searchUrl.searchParams.set("maxResults", String(Math.min(Number(maxResults) || 5, 10)));
     searchUrl.searchParams.set("order", "relevance");
@@ -512,10 +582,13 @@ app.post("/api/youtube-search", async (req, res) => {
     if (ids.length === 0) {
       res.json({
         isRealData: true,
-        searchSummary: "YouTube returned no videos for this query.",
+        searchSummary: `YouTube returned no videos for "${effectiveSearch.query}".`,
         opportunityFormula: "Try a broader keyword or change the market/date filter.",
         videos: [],
-        youtubeError: null
+        youtubeError: null,
+        effectiveQuery: effectiveSearch.query,
+        wasTranslated: effectiveSearch.translated,
+        translationNote: effectiveSearch.translationNote || null
       });
       return;
     }
@@ -576,18 +649,24 @@ app.post("/api/youtube-search", async (req, res) => {
 
     res.json({
       isRealData: true,
-      searchSummary: `Fetched ${videos.length} live YouTube videos for "${query}".`,
+      searchSummary: `Fetched ${videos.length} live YouTube videos for "${effectiveSearch.query}".`,
       opportunityFormula: "Prioritize videos where the title is emotionally specific and the view-to-subscriber ratio is unusually high.",
       videos,
-      youtubeError: null
+      youtubeError: null,
+      effectiveQuery: effectiveSearch.query,
+      wasTranslated: effectiveSearch.translated,
+      translationNote: effectiveSearch.translationNote || null
     });
   } catch (error: any) {
     res.json({
       isRealData: false,
-      searchSummary: "YouTube API call failed, so simulated benchmark data is being shown.",
+      searchSummary: `YouTube API call failed, so simulated benchmark data is being shown. Search query used: "${effectiveSearch.query}".`,
       opportunityFormula: "Check that the API key is valid and that YouTube Data API v3 is enabled in Google Cloud.",
-      videos: buildFallbackVideos(String(query)),
-      youtubeError: error?.message || "YouTube API request failed."
+      videos: buildFallbackVideos(effectiveSearch.query),
+      youtubeError: error?.message || "YouTube API request failed.",
+      effectiveQuery: effectiveSearch.query,
+      wasTranslated: effectiveSearch.translated,
+      translationNote: effectiveSearch.translationNote || null
     });
   }
 });

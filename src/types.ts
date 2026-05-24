@@ -121,6 +121,9 @@ export interface YouTubeSearchResponse {
   opportunityFormula: string;
   videos: YouTubeVideo[];
   youtubeError?: string | null;
+  effectiveQuery?: string;
+  wasTranslated?: boolean;
+  translationNote?: string | null;
 }
 
 export interface ABPlanResponse {
@@ -135,6 +138,5 @@ export interface ABPlanResponse {
   thumbnailD: { concept: string; midjourneyPrompt: string; style: string };
   strategyAnalysis: string;
 }
-
 
 

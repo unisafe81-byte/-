@@ -1052,6 +1052,19 @@ export default function App() {
                      )}
                    </div>
                  )}
+                {searchResult.effectiveQuery && (
+                  <div className="bg-slate-950/50 border border-indigo-500/20 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-2 text-left">
+                    <span className="text-[10px] font-black text-indigo-300 uppercase tracking-widest shrink-0">
+                      실제 검색어
+                    </span>
+                    <span className="text-xs text-white font-mono break-all">{searchResult.effectiveQuery}</span>
+                    {searchResult.wasTranslated && (
+                      <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
+                        글로벌 시장용 영어 의역 적용
+                      </span>
+                    )}
+                  </div>
+                )}
                   <div className="overflow-x-auto rounded-2xl border border-gray-850 bg-slate-950/60 shadow-xl">
                     <table className="w-full text-left border-collapse">
                       <thead>
