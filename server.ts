@@ -8,6 +8,7 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 app.use(express.json());
 
@@ -25,6 +26,85 @@ function getGeminiClient(customKey?: string): GoogleGenAI {
       }
     }
   });
+}
+
+function getYouTubeKey(customKey?: string): string | undefined {
+  return customKey && customKey.trim() !== "" ? customKey.trim() : process.env.YOUTUBE_API_KEY;
+}
+
+function parseGeminiJson(text?: string): any {
+  const raw = text || "{}";
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/);
+    return match ? JSON.parse(match[0]) : {};
+  }
+}
+
+function formatCompactNumber(value: string | number | undefined): string {
+  const num = Number(value || 0);
+  if (!Number.isFinite(num)) return "0";
+  if (num >= 1000000000) return `${(num / 1000000000).toFixed(1)}B`;
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+  return String(num);
+}
+
+function parseIsoDuration(duration = "PT0S"): string {
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return "0:00";
+  const hours = Number(match[1] || 0);
+  const minutes = Number(match[2] || 0);
+  const seconds = Number(match[3] || 0);
+  const parts = hours > 0
+    ? [hours, String(minutes).padStart(2, "0"), String(seconds).padStart(2, "0")]
+    : [minutes, String(seconds).padStart(2, "0")];
+  return parts.join(":");
+}
+
+function buildFallbackVideos(query: string): any[] {
+  const baseTitle = query || "psychology content strategy";
+  return [
+    {
+      id: "fallback-1",
+      title: `Why ${baseTitle} quietly changes how people see themselves`,
+      channelId: "fallback-channel-1",
+      channelTitle: "Psychology Strategy Model",
+      thumbnail: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+      viewCount: "820K",
+      likeCount: "31K",
+      subscriberCount: "1.2M",
+      viewToSubRatio: "68%",
+      duration: "6:40",
+      publishedAt: new Date().toISOString(),
+      analysis: {
+        psy2goShell: "Soft everyday empathy hook with a simple emotional symptom list.",
+        schoolOfLifeCore: "Reframes private discomfort as a universal human contradiction.",
+        cynicalWitPoint: "Gentle irony about pretending to be fine while optimizing every tiny interaction.",
+        trojanRemakeTip: "Open with a harmless daily scene, then reveal the deeper identity wound underneath."
+      }
+    },
+    {
+      id: "fallback-2",
+      title: `The hidden pattern behind ${baseTitle}`,
+      channelId: "fallback-channel-2",
+      channelTitle: "Human Behavior Lab",
+      thumbnail: "https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg",
+      viewCount: "410K",
+      likeCount: "18K",
+      subscriberCount: "640K",
+      viewToSubRatio: "64%",
+      duration: "8:12",
+      publishedAt: new Date(Date.now() - 86400000 * 4).toISOString(),
+      analysis: {
+        psy2goShell: "Accessible sign-based framing that feels immediately recognizable.",
+        schoolOfLifeCore: "Turns the topic into a broader meditation on belonging and self-protection.",
+        cynicalWitPoint: "A dry observation about how modern confidence is often just better packaging.",
+        trojanRemakeTip: "Use a listicle surface, but make each point resolve into a poetic self-recognition beat."
+      }
+    }
+  ];
 }
 
 // Graceful Offline Fallback Generator for the Trojan Horse Planning & Script Engine in case of Gemini Quota limits (429)
@@ -206,7 +286,7 @@ app.post("/api/analyze-fusion", async (req, res) => {
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         systemInstruction: "당신은 글로벌 1,200만 구독자 유튜브 매체의 수석 크리에이티브 디랙터이자 유튜브 알고리즘 트래픽 메카니즘을 관통하는 최고의 수석 에디터입니다. 한글 대본 번역은 문학적이고 절절한 가슴을 때리는 감정이며, 영어 나레이션은 실제 원어민이 들어도 감탄사가 튀어나올 수준의 우아하고 시적이며 유려한 수준의 어조를 유지해야 합니다. 지체하거나 변명하지 않고 각 JSON 프로퍼티를 최대 분량의 한계까지 꽉 채워서 풍부하게 리턴합니다.",
@@ -295,6 +375,266 @@ app.post("/api/analyze-fusion", async (req, res) => {
       needConfig: !process.env.GEMINI_API_KEY,
       isQuotaError: isQuotaError
     });
+  }
+});
+
+app.post("/api/test-keys", async (req, res) => {
+  const { customGeminiApiKey, customYouTubeApiKey } = req.body || {};
+  const result = {
+    gemini: { success: false, message: "Gemini API key is not configured." },
+    youtube: { success: false, message: "YouTube API key is not configured." }
+  };
+
+  const geminiKey = (customGeminiApiKey && customGeminiApiKey.trim() !== "") ? customGeminiApiKey : process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const ai = getGeminiClient(geminiKey);
+      await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: "Reply with only: ok"
+      });
+      result.gemini = { success: true, message: `Gemini API key is valid. Model: ${GEMINI_MODEL}` };
+    } catch (error: any) {
+      result.gemini = {
+        success: false,
+        message: error?.message || "Gemini API key validation failed."
+      };
+    }
+  }
+
+  const youtubeKey = getYouTubeKey(customYouTubeApiKey);
+  if (youtubeKey) {
+    try {
+      const url = new URL("https://www.googleapis.com/youtube/v3/search");
+      url.searchParams.set("part", "snippet");
+      url.searchParams.set("type", "video");
+      url.searchParams.set("q", "psychology");
+      url.searchParams.set("maxResults", "1");
+      url.searchParams.set("key", youtubeKey);
+
+      const response = await fetch(url);
+      const data: any = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error?.message || `YouTube API returned ${response.status}`);
+      }
+      result.youtube = { success: true, message: "YouTube Data API key is valid." };
+    } catch (error: any) {
+      result.youtube = {
+        success: false,
+        message: error?.message || "YouTube API key validation failed."
+      };
+    }
+  }
+
+  res.json(result);
+});
+
+app.post("/api/youtube-search", async (req, res) => {
+  const {
+    query,
+    market = "KR",
+    durationFilter = "all",
+    dateFilter = "all",
+    maxResults = 5,
+    customApiKey
+  } = req.body || {};
+
+  if (!query || !String(query).trim()) {
+    res.status(400).json({ error: "Search query is required." });
+    return;
+  }
+
+  const youtubeKey = getYouTubeKey(customApiKey);
+  if (!youtubeKey) {
+    res.json({
+      isRealData: false,
+      searchSummary: "No YouTube API key was configured, so simulated benchmark data is being shown.",
+      opportunityFormula: "Use the simulated result to shape the concept, then add a YouTube Data API key for live trend validation.",
+      videos: buildFallbackVideos(String(query)),
+      youtubeError: "YOUTUBE_API_KEY is missing."
+    });
+    return;
+  }
+
+  try {
+    const publishedAfter = (() => {
+      const now = Date.now();
+      if (dateFilter === "week") return new Date(now - 86400000 * 7).toISOString();
+      if (dateFilter === "month") return new Date(now - 86400000 * 30).toISOString();
+      if (dateFilter === "year") return new Date(now - 86400000 * 365).toISOString();
+      return null;
+    })();
+
+    const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
+    searchUrl.searchParams.set("part", "snippet");
+    searchUrl.searchParams.set("type", "video");
+    searchUrl.searchParams.set("q", String(query));
+    searchUrl.searchParams.set("regionCode", market === "US" ? "US" : "KR");
+    searchUrl.searchParams.set("maxResults", String(Math.min(Number(maxResults) || 5, 10)));
+    searchUrl.searchParams.set("order", "relevance");
+    searchUrl.searchParams.set("key", youtubeKey);
+    if (durationFilter !== "all") searchUrl.searchParams.set("videoDuration", durationFilter);
+    if (publishedAfter) searchUrl.searchParams.set("publishedAfter", publishedAfter);
+
+    const searchResponse = await fetch(searchUrl);
+    const searchData: any = await searchResponse.json().catch(() => ({}));
+    if (!searchResponse.ok) {
+      throw new Error(searchData?.error?.message || `YouTube search returned ${searchResponse.status}`);
+    }
+
+    const ids = (searchData.items || [])
+      .map((item: any) => item?.id?.videoId)
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      res.json({
+        isRealData: true,
+        searchSummary: "YouTube returned no videos for this query.",
+        opportunityFormula: "Try a broader keyword or change the market/date filter.",
+        videos: [],
+        youtubeError: null
+      });
+      return;
+    }
+
+    const detailUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+    detailUrl.searchParams.set("part", "snippet,statistics,contentDetails");
+    detailUrl.searchParams.set("id", ids.join(","));
+    detailUrl.searchParams.set("key", youtubeKey);
+
+    const detailResponse = await fetch(detailUrl);
+    const detailData: any = await detailResponse.json().catch(() => ({}));
+    if (!detailResponse.ok) {
+      throw new Error(detailData?.error?.message || `YouTube video details returned ${detailResponse.status}`);
+    }
+
+    const channelIds = Array.from(new Set((detailData.items || []).map((item: any) => item?.snippet?.channelId).filter(Boolean)));
+    const channelSubCounts = new Map<string, number>();
+    if (channelIds.length > 0) {
+      const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+      channelUrl.searchParams.set("part", "statistics");
+      channelUrl.searchParams.set("id", channelIds.join(","));
+      channelUrl.searchParams.set("key", youtubeKey);
+      const channelResponse = await fetch(channelUrl);
+      const channelData: any = await channelResponse.json().catch(() => ({}));
+      if (channelResponse.ok) {
+        for (const channel of channelData.items || []) {
+          channelSubCounts.set(channel.id, Number(channel.statistics?.subscriberCount || 0));
+        }
+      }
+    }
+
+    const videos = (detailData.items || []).map((item: any) => {
+      const stats = item.statistics || {};
+      const snippet = item.snippet || {};
+      const views = Number(stats.viewCount || 0);
+      const subs = channelSubCounts.get(snippet.channelId) || 0;
+      const ratio = subs > 0 ? `${Math.round((views / subs) * 100)}%` : "N/A";
+      return {
+        id: item.id,
+        title: snippet.title || "Untitled video",
+        channelId: snippet.channelId || "",
+        channelTitle: snippet.channelTitle || "Unknown channel",
+        thumbnail: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
+        viewCount: formatCompactNumber(stats.viewCount),
+        likeCount: formatCompactNumber(stats.likeCount),
+        subscriberCount: subs ? formatCompactNumber(subs) : "Hidden",
+        viewToSubRatio: ratio,
+        duration: parseIsoDuration(item.contentDetails?.duration),
+        publishedAt: snippet.publishedAt || "",
+        analysis: {
+          psy2goShell: "Use the visible title promise as a simple emotional entry point.",
+          schoolOfLifeCore: "Lift the topic into a broader reflection on identity, longing, fear, or belonging.",
+          cynicalWitPoint: "Add one dry line that exposes the social performance hiding under the surface.",
+          trojanRemakeTip: "Keep the clickable topic, but make the payoff more personal and philosophically sharper."
+        }
+      };
+    });
+
+    res.json({
+      isRealData: true,
+      searchSummary: `Fetched ${videos.length} live YouTube videos for "${query}".`,
+      opportunityFormula: "Prioritize videos where the title is emotionally specific and the view-to-subscriber ratio is unusually high.",
+      videos,
+      youtubeError: null
+    });
+  } catch (error: any) {
+    res.json({
+      isRealData: false,
+      searchSummary: "YouTube API call failed, so simulated benchmark data is being shown.",
+      opportunityFormula: "Check that the API key is valid and that YouTube Data API v3 is enabled in Google Cloud.",
+      videos: buildFallbackVideos(String(query)),
+      youtubeError: error?.message || "YouTube API request failed."
+    });
+  }
+});
+
+app.post("/api/generate-ab-plan", async (req, res) => {
+  const {
+    videoTitle,
+    psy2goShell,
+    schoolOfLifeCore,
+    cynicalWitPoint,
+    trojanRemakeTip,
+    customGeminiApiKey
+  } = req.body || {};
+
+  const fallback = {
+    quotaExceededFallback: true,
+    titleA: { title: `${videoTitle} - the quiet reason it hurts`, enTitle: videoTitle, trigger: "empathy", style: "Psych2Go soft hook" },
+    titleB: { title: `Why we keep repeating this pattern`, enTitle: `Why we keep repeating ${videoTitle}`, trigger: "self-recognition", style: "School of Life reflection" },
+    titleC: { title: `You are not overreacting. This is the pattern.`, enTitle: "You are not overreacting", trigger: "validation", style: "high-retention confession" },
+    titleD: { title: `The harmless habit that quietly trains your loneliness`, enTitle: "The harmless habit behind loneliness", trigger: "curiosity gap", style: "trojan horse framing" },
+    thumbnailA: { concept: "Small character under a large shadow of thought bubbles", midjourneyPrompt: "soft 2D pastel psychology thumbnail, small lonely character, large thought bubble, clean YouTube composition", style: "gentle animated" },
+    thumbnailB: { concept: "Minimal human figure facing a mirror with a cracked label", midjourneyPrompt: "minimal philosophical illustration, person facing mirror, muted colors, elegant editorial YouTube thumbnail", style: "philosophical" },
+    thumbnailC: { concept: "Two contrasting faces: public smile and private exhaustion", midjourneyPrompt: "split-face emotional YouTube thumbnail, public smile private exhaustion, bold simple composition", style: "emotional contrast" },
+    thumbnailD: { concept: "Innocent daily object hiding a deeper wound", midjourneyPrompt: "trojan horse psychology thumbnail, ordinary object with hidden emotional shadow, cinematic but clean", style: "curiosity-driven" },
+    strategyAnalysis: `Use "${psy2goShell || videoTitle}" as the accessible shell, then deepen it with "${schoolOfLifeCore || "a universal human contradiction"}". The strongest variation should combine the emotional promise with a slightly uncomfortable truth: ${cynicalWitPoint || trojanRemakeTip || "people click when they recognize themselves before they feel judged"}.`
+  };
+
+  const hasGeminiKey = (customGeminiApiKey && customGeminiApiKey.trim() !== "") || (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== "");
+  if (!hasGeminiKey) {
+    res.json(fallback);
+    return;
+  }
+
+  try {
+    const ai = getGeminiClient(customGeminiApiKey);
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: `Create a concise YouTube A/B testing plan as JSON for this source video.
+Title: ${videoTitle}
+Psych2Go shell: ${psy2goShell}
+School of Life core: ${schoolOfLifeCore}
+Cynical wit point: ${cynicalWitPoint}
+Trojan remake tip: ${trojanRemakeTip}`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            titleA: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, enTitle: { type: Type.STRING }, trigger: { type: Type.STRING }, style: { type: Type.STRING } }, required: ["title", "trigger", "style"] },
+            titleB: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, enTitle: { type: Type.STRING }, trigger: { type: Type.STRING }, style: { type: Type.STRING } }, required: ["title", "trigger", "style"] },
+            titleC: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, enTitle: { type: Type.STRING }, trigger: { type: Type.STRING }, style: { type: Type.STRING } }, required: ["title", "trigger", "style"] },
+            titleD: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, enTitle: { type: Type.STRING }, trigger: { type: Type.STRING }, style: { type: Type.STRING } }, required: ["title", "trigger", "style"] },
+            thumbnailA: { type: Type.OBJECT, properties: { concept: { type: Type.STRING }, midjourneyPrompt: { type: Type.STRING }, style: { type: Type.STRING } }, required: ["concept", "midjourneyPrompt", "style"] },
+            thumbnailB: { type: Type.OBJECT, properties: { concept: { type: Type.STRING }, midjourneyPrompt: { type: Type.STRING }, style: { type: Type.STRING } }, required: ["concept", "midjourneyPrompt", "style"] },
+            thumbnailC: { type: Type.OBJECT, properties: { concept: { type: Type.STRING }, midjourneyPrompt: { type: Type.STRING }, style: { type: Type.STRING } }, required: ["concept", "midjourneyPrompt", "style"] },
+            thumbnailD: { type: Type.OBJECT, properties: { concept: { type: Type.STRING }, midjourneyPrompt: { type: Type.STRING }, style: { type: Type.STRING } }, required: ["concept", "midjourneyPrompt", "style"] },
+            strategyAnalysis: { type: Type.STRING }
+          },
+          required: ["titleA", "titleB", "titleC", "titleD", "thumbnailA", "thumbnailB", "thumbnailC", "thumbnailD", "strategyAnalysis"]
+        }
+      }
+    });
+    res.json(parseGeminiJson(response.text));
+  } catch (error: any) {
+    const message = error?.message || "";
+    if (message.includes("429") || message.toLowerCase().includes("quota")) {
+      res.json(fallback);
+      return;
+    }
+    res.status(500).json({ error: message || "Failed to generate A/B plan." });
   }
 });
 

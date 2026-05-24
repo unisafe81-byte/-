@@ -1,0 +1,5 @@
+node_modules/
+dist/
+_zip_check/
+.env
+.env.local
