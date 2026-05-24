@@ -338,6 +338,37 @@ export default function App() {
     }
   };
 
+  const splitScriptOutput = (script: string) => {
+    const original: string[] = [];
+    const translation: string[] = [];
+    const production: string[] = [];
+
+    script.split(/\r?\n/).forEach((rawLine) => {
+      const line = rawLine.trim();
+      if (!line) return;
+
+      if (/^\[.+\]$/.test(line)) {
+        original.push(`\n${line}`);
+        translation.push(`\n${line}`);
+        production.push(`\n${line}`);
+      } else if (line.startsWith("EN:")) {
+        original.push(line.replace(/^EN:\s*/, ""));
+      } else if (line.startsWith("KR:")) {
+        translation.push(line.replace(/^KR:\s*/, ""));
+      } else if (line.startsWith("VISUAL:")) {
+        production.push(`VISUAL: ${line.replace(/^VISUAL:\s*/, "")}`);
+      } else if (line.startsWith("RETENTION:")) {
+        production.push(`RETENTION: ${line.replace(/^RETENTION:\s*/, "")}`);
+      }
+    });
+
+    return {
+      original: original.join("\n").trim() || script,
+      translation: translation.join("\n").trim() || "한글 번역본을 찾지 못했습니다. 생성 프롬프트를 다시 실행해 주세요.",
+      production: production.join("\n").trim() || "장면/시청지속 설계 정보를 찾지 못했습니다."
+    };
+  };
+
 
 
   const handleGenerateABTestingPlan = async (videoItem?: YouTubeVideo): Promise<ABPlanResponse | null> => {
@@ -2316,20 +2347,39 @@ export default function App() {
                           School of Life 구조 대본
                         </button>
                       </div>
-                      <div className="bg-black/60 border border-gray-850 rounded-xl p-4">
-                        <div className="flex justify-end mb-3">
-                          <button
-                            onClick={() => handleCopyResultText(masterScriptTab === "psych2go" ? masterScriptResult.psych2goScript : masterScriptResult.schoolOfLifeScript, `master-${masterScriptTab}`)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-indigo-950/70 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-900 cursor-pointer"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                            {copiedId === `master-${masterScriptTab}` ? "복사 완료" : "대본 복사"}
-                          </button>
-                        </div>
-                        <pre className="whitespace-pre-wrap text-xs text-gray-300 leading-relaxed font-sans max-h-[680px] overflow-y-auto">
-                          {masterScriptTab === "psych2go" ? masterScriptResult.psych2goScript : masterScriptResult.schoolOfLifeScript}
-                        </pre>
-                      </div>
+                      {(() => {
+                        const currentScript = masterScriptTab === "psych2go" ? masterScriptResult.psych2goScript : masterScriptResult.schoolOfLifeScript;
+                        const sections = splitScriptOutput(currentScript);
+                        const sectionCards = [
+                          { id: "original", title: "대본 원본 (EN)", content: sections.original, color: "text-indigo-300" },
+                          { id: "translation", title: "한글 번역본 (KR)", content: sections.translation, color: "text-amber-300" },
+                          { id: "production", title: "장면/시청지속 설계", content: sections.production, color: "text-emerald-300" }
+                        ];
+
+                        return (
+                          <div className="grid grid-cols-1 gap-4">
+                            {sectionCards.map((section) => (
+                              <div key={section.id} className="bg-black/60 border border-gray-850 rounded-xl p-4">
+                                <div className="flex items-center justify-between gap-3 mb-3">
+                                  <h4 className={`text-[11px] font-black uppercase tracking-widest ${section.color}`}>
+                                    {section.title}
+                                  </h4>
+                                  <button
+                                    onClick={() => handleCopyResultText(section.content, `master-${masterScriptTab}-${section.id}`)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-indigo-950/70 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-900 cursor-pointer shrink-0"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                    {copiedId === `master-${masterScriptTab}-${section.id}` ? "복사 완료" : "복사"}
+                                  </button>
+                                </div>
+                                <pre className="whitespace-pre-wrap text-xs text-gray-300 leading-relaxed font-sans max-h-[360px] overflow-y-auto">
+                                  {section.content}
+                                </pre>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
