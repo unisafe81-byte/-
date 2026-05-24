@@ -1445,6 +1445,11 @@ export default function App() {
                               <Copy className="w-3.5 h-3.5" />
                             </button>
                           </div>
+                          {abPlanResult.titleA.enTitle && (
+                            <p className="text-[11px] text-amber-300 leading-relaxed">
+                              <strong>한글 번역:</strong> {abPlanResult.titleA.enTitle}
+                            </p>
+                          )}
                           <p className="text-[11px] text-indigo-300">
                             <strong>심리 타격 기제:</strong> {abPlanResult.titleA.trigger}
                           </p>
@@ -1499,6 +1504,11 @@ export default function App() {
                               <Copy className="w-3.5 h-3.5" />
                             </button>
                           </div>
+                          {abPlanResult.titleB.enTitle && (
+                            <p className="text-[11px] text-amber-300 leading-relaxed">
+                              <strong>한글 번역:</strong> {abPlanResult.titleB.enTitle}
+                            </p>
+                          )}
                           <p className="text-[11px] text-indigo-300">
                             <strong>심리 타격 기제:</strong> {abPlanResult.titleB.trigger}
                           </p>
@@ -1554,6 +1564,11 @@ export default function App() {
                               <Copy className="w-3.5 h-3.5" />
                             </button>
                           </div>
+                          {abPlanResult.titleC.enTitle && (
+                            <p className="text-[11px] text-amber-300 leading-relaxed">
+                              <strong>한글 번역:</strong> {abPlanResult.titleC.enTitle}
+                            </p>
+                          )}
                           <p className="text-[11px] text-indigo-300">
                             <strong>심리 타격 기제:</strong> {abPlanResult.titleC.trigger}
                           </p>
@@ -1609,6 +1624,11 @@ export default function App() {
                               <Copy className="w-3.5 h-3.5" />
                             </button>
                           </div>
+                          {abPlanResult.titleD.enTitle && (
+                            <p className="text-[11px] text-amber-300 leading-relaxed">
+                              <strong>한글 번역:</strong> {abPlanResult.titleD.enTitle}
+                            </p>
+                          )}
                           <p className="text-[11px] text-indigo-300">
                             <strong>심리 타격 기제:</strong> {abPlanResult.titleD.trigger}
                           </p>
@@ -1685,8 +1705,8 @@ export default function App() {
                             { id: "C", key: "C" as const, titleObj: abPlanResult.titleC, thumbObj: abPlanResult.thumbnailC, color: "text-purple-400 bg-purple-950/30 border-purple-900/30", badge: "융합추천형" },
                             { id: "D", key: "D" as const, titleObj: abPlanResult.titleD, thumbObj: abPlanResult.thumbnailD, color: "text-indigo-400 bg-indigo-950/30 border-indigo-900/30", badge: "인지과학형" }
                           ].map((item) => {
-                            const enTitlePartText = item.titleObj.enTitle ? `\n- 영어 의역 제목: “${item.titleObj.enTitle}”` : "";
-                            const fullText = `[대안 ${item.id} - ${item.badge}]\n- 스타일: ${item.titleObj.style}\n- 한글 제목: “${item.titleObj.title}”${enTitlePartText}\n- 비주얼 콘셉트: ${item.thumbObj.concept}\n- 이미지 생성 프롬프트:\n${item.thumbObj.midjourneyPrompt}`;
+                            const translatedTitlePartText = item.titleObj.enTitle ? `\n- 한글 번역 제목: “${item.titleObj.enTitle}”` : "";
+                            const fullText = `[대안 ${item.id} - ${item.badge}]\n- 스타일: ${item.titleObj.style}\n- 글로벌 영어 제목: “${item.titleObj.title}”${translatedTitlePartText}\n- 비주얼 콘셉트: ${item.thumbObj.concept}\n- 이미지 생성 프롬프트:\n${item.thumbObj.midjourneyPrompt}`;
                             return (
                               <div key={item.id} className="bg-gray-900/35 rounded-xl border border-gray-850 p-4 space-y-3.5 hover:border-gray-800 transition-colors">
                                 <div className="flex items-center justify-between border-b border-gray-900 pb-2">
@@ -1716,15 +1736,15 @@ export default function App() {
 
                                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-center">
                                   <div className="md:col-span-5 space-y-1">
-                                    <p className="text-[10px] font-mono text-gray-500 font-bold block">Proposed Video Title (권장 복사형 제목)</p>
+                                    <p className="text-[10px] font-mono text-gray-500 font-bold block">Global Video Title / Korean Review Translation</p>
                                     <div className="bg-black/35 rounded p-2.5 border border-gray-900/30 space-y-2">
                                       <div className="flex items-start gap-1.5 text-left">
-                                        <span className="text-[8px] bg-indigo-950 text-indigo-400 border border-indigo-900/40 px-1 py-0.5 rounded font-mono shrink-0">KO</span>
+                                        <span className="text-[8px] bg-indigo-950 text-indigo-400 border border-indigo-900/40 px-1 py-0.5 rounded font-mono shrink-0">EN</span>
                                         <span className="text-xs font-black text-white leading-relaxed">{item.titleObj.title}</span>
                                       </div>
                                       {item.titleObj.enTitle && (
                                         <div className="border-t border-gray-900/40 pt-1.5 mt-1.5 flex items-start gap-1.5 text-left">
-                                          <span className="text-[8px] bg-amber-950 text-amber-400 border border-amber-900/40 px-1 py-0.5 rounded font-mono shrink-0 font-bold">EN</span>
+                                          <span className="text-[8px] bg-amber-950 text-amber-400 border border-amber-900/40 px-1 py-0.5 rounded font-mono shrink-0 font-bold">KR</span>
                                           <span className="text-xs font-semibold text-gray-300 italic font-sans leading-relaxed">“{item.titleObj.enTitle}”</span>
                                         </div>
                                       )}
@@ -1734,14 +1754,14 @@ export default function App() {
                                         onClick={() => handleCopyResultText(item.titleObj.title, `title-${item.id}`)}
                                         className="text-[9px] font-bold text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1 cursor-pointer"
                                       >
-                                        {copiedId === `title-${item.id}` ? "제목 복사됨 ✓" : "한글만 복사 ⚡"}
+                                        {copiedId === `title-${item.id}` ? "영어 제목 복사됨 ✓" : "영어 제목 복사 ⚡"}
                                       </button>
                                       {item.titleObj.enTitle && (
                                         <button
                                           onClick={() => handleCopyResultText(item.titleObj.enTitle || "", `entitle-${item.id}`)}
                                           className="text-[9px] font-bold text-amber-400 hover:text-amber-300 inline-flex items-center gap-1 cursor-pointer"
                                         >
-                                          {copiedId === `entitle-${item.id}` ? "영어 복사됨 ✓" : "영어만 복사 ⚡"}
+                                          {copiedId === `entitle-${item.id}` ? "한글 번역 복사됨 ✓" : "한글 번역 복사 ⚡"}
                                         </button>
                                       )}
                                     </div>
@@ -1820,7 +1840,7 @@ export default function App() {
                             colorTheme = "border-indigo-500/20 focus-within:border-indigo-500/40 Accent-indigo";
                           }
 
-                          const singleFullText = `[유튜브 기획 대안 ${opt} - ${badgeName}]\n\n■ 스타일 카테고리: ${styleName}\n■ 유튜브 비디오 권장 수식 제목 (한글):\n“${title}”\n${enTitle ? `\n■ 유튜브 비디오 권장 수식 제목 (영어 의역):\n“${enTitle}”\n` : ""}\n■ 타겟 심리 트리거:\n${trigger}\n\n■ 썸네일 비주얼 가이드라인 컨셉:\n${concept}\n\n■ 인공지능 이미지 생성기 추천 영문 프롬프트 (Midjourney Prompt):\n${prompt}`;
+                          const singleFullText = `[유튜브 기획 대안 ${opt} - ${badgeName}]\n\n■ 스타일 카테고리: ${styleName}\n■ 글로벌 영어 제목:\n“${title}”\n${enTitle ? `\n■ 한글 번역 제목:\n“${enTitle}”\n` : ""}\n■ 타겟 심리 트리거:\n${trigger}\n\n■ 썸네일 비주얼 가이드라인 컨셉:\n${concept}\n\n■ 인공지능 이미지 생성기 추천 영문 프롬프트 (Midjourney Prompt):\n${prompt}`;
 
                           return (
                             <div className={`bg-gray-950/85 rounded-xl border p-5 space-y-4 transition-all duration-300 ${colorTheme}`}>
@@ -1861,26 +1881,26 @@ export default function App() {
                                           onClick={() => handleCopyResultText(title, `single-title-${opt}`)}
                                           className="text-[9px] text-indigo-400 hover:text-indigo-300 font-bold"
                                         >
-                                          {copiedId === `single-title-${opt}` ? "한글 복사됨!" : "한글 복사"}
+                                          {copiedId === `single-title-${opt}` ? "영어 제목 복사됨!" : "영어 제목 복사"}
                                         </button>
                                         {enTitle && (
                                           <button
                                             onClick={() => handleCopyResultText(enTitle, `single-entitle-${opt}`)}
                                             className="text-[9px] text-amber-400 hover:text-amber-300 font-bold hover:underline"
                                           >
-                                            {copiedId === `single-entitle-${opt}` ? "영어 복사됨!" : "영어 의역 복사"}
+                                            {copiedId === `single-entitle-${opt}` ? "한글 번역 복사됨!" : "한글 번역 복사"}
                                           </button>
                                         )}
                                       </div>
                                     </div>
                                     <div className="bg-black/60 rounded p-2.5 border border-gray-850 space-y-2">
                                       <div className="flex items-start gap-1.5 text-left">
-                                        <span className="text-[8px] bg-indigo-950 text-indigo-400 border border-indigo-900/40 px-1 py-0.5 rounded font-mono shrink-0 font-bold">KO</span>
+                                        <span className="text-[8px] bg-indigo-950 text-indigo-400 border border-indigo-900/40 px-1 py-0.5 rounded font-mono shrink-0 font-bold">EN</span>
                                         <span className="text-xs font-black text-white leading-relaxed">“{title}”</span>
                                       </div>
                                       {enTitle && (
                                         <div className="border-t border-gray-900/40 pt-1.5 mt-1.5 flex items-start gap-1.5 text-left">
-                                          <span className="text-[8px] bg-amber-950 text-amber-400 border border-amber-900/40 px-1 py-0.5 rounded font-mono shrink-0 font-bold">EN</span>
+                                          <span className="text-[8px] bg-amber-950 text-amber-400 border border-amber-900/40 px-1 py-0.5 rounded font-mono shrink-0 font-bold">KR</span>
                                           <span className="text-xs font-semibold text-gray-300 italic font-sans leading-relaxed">“{enTitle}”</span>
                                         </div>
                                       )}

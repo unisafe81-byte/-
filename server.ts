@@ -702,15 +702,15 @@ app.post("/api/generate-ab-plan", async (req, res) => {
 
   const fallback = {
     quotaExceededFallback: true,
-    titleA: { title: `${videoTitle} - the quiet reason it hurts`, enTitle: videoTitle, trigger: "empathy", style: "Psych2Go soft hook" },
-    titleB: { title: `Why we keep repeating this pattern`, enTitle: `Why we keep repeating ${videoTitle}`, trigger: "self-recognition", style: "School of Life reflection" },
-    titleC: { title: `You are not overreacting. This is the pattern.`, enTitle: "You are not overreacting", trigger: "validation", style: "high-retention confession" },
-    titleD: { title: `The harmless habit that quietly trains your loneliness`, enTitle: "The harmless habit behind loneliness", trigger: "curiosity gap", style: "trojan horse framing" },
-    thumbnailA: { concept: "Small character under a large shadow of thought bubbles", midjourneyPrompt: "soft 2D pastel psychology thumbnail, small lonely character, large thought bubble, clean YouTube composition", style: "gentle animated" },
-    thumbnailB: { concept: "Minimal human figure facing a mirror with a cracked label", midjourneyPrompt: "minimal philosophical illustration, person facing mirror, muted colors, elegant editorial YouTube thumbnail", style: "philosophical" },
-    thumbnailC: { concept: "Two contrasting faces: public smile and private exhaustion", midjourneyPrompt: "split-face emotional YouTube thumbnail, public smile private exhaustion, bold simple composition", style: "emotional contrast" },
-    thumbnailD: { concept: "Innocent daily object hiding a deeper wound", midjourneyPrompt: "trojan horse psychology thumbnail, ordinary object with hidden emotional shadow, cinematic but clean", style: "curiosity-driven" },
-    strategyAnalysis: `Use "${psy2goShell || videoTitle}" as the accessible shell, then deepen it with "${schoolOfLifeCore || "a universal human contradiction"}". The strongest variation should combine the emotional promise with a slightly uncomfortable truth: ${cynicalWitPoint || trojanRemakeTip || "people click when they recognize themselves before they feel judged"}.`
+    titleA: { title: `${videoTitle} - The Quiet Reason It Hurts`, enTitle: "이 감정이 조용히 아픈 진짜 이유", trigger: "공감 검증: 시청자가 이미 느끼던 불편함을 제목에서 즉시 인정받게 합니다.", style: "Psych2Go 대중 공감형" },
+    titleB: { title: "Why We Keep Repeating This Pattern", enTitle: "왜 우리는 이 패턴을 계속 반복하는가", trigger: "자기인식 유도: 습관처럼 반복되는 관계/감정 패턴을 지적으로 재해석합니다.", style: "School of Life 사색 통찰형" },
+    titleC: { title: "You Are Not Overreacting. This Is the Pattern.", enTitle: "당신이 예민한 게 아닙니다. 이것은 하나의 패턴입니다.", trigger: "검증과 안도: 죄책감을 낮추고 끝까지 보게 만드는 면죄부 구조입니다.", style: "트로이 융합형" },
+    titleD: { title: "The Harmless Habit That Quietly Trains Your Loneliness", enTitle: "당신의 외로움을 조용히 훈련시키는 무해한 습관", trigger: "호기심 격차: 평범한 행동 뒤에 숨은 심리적 비용을 암시합니다.", style: "블랙위트 인지부조화형" },
+    thumbnailA: { concept: "작은 인물이 거대한 생각 말풍선 아래 눌려 있는 구도. 귀엽지만 정서적 압박이 바로 보이게 설계합니다.", midjourneyPrompt: "soft 2D pastel psychology thumbnail, small lonely character under a large thought bubble, clean YouTube composition, emotional but gentle", style: "부드러운 애니메이션형" },
+    thumbnailB: { concept: "거울 앞에 선 미니멀 인물과 금이 간 라벨. 자기 인식과 철학적 거리감을 동시에 줍니다.", midjourneyPrompt: "minimal philosophical illustration, person facing a cracked mirror, muted colors, elegant editorial YouTube thumbnail, cinematic composition", style: "철학 에세이형" },
+    thumbnailC: { concept: "공적인 미소와 사적인 소진을 좌우 대비로 보여줍니다. 클릭 전부터 내면의 이중성을 읽게 합니다.", midjourneyPrompt: "split-face emotional YouTube thumbnail, public smile and private exhaustion, bold simple composition, high contrast, psychology channel style", style: "감정 대비형" },
+    thumbnailD: { concept: "평범한 일상 오브젝트 뒤에 깊은 그림자가 드리워진 장면. 무해함과 상처의 반전을 만듭니다.", midjourneyPrompt: "trojan horse psychology thumbnail, ordinary daily object with hidden emotional shadow, cinematic clean composition, high retention visual metaphor", style: "호기심 유도형" },
+    strategyAnalysis: `"${psy2goShell || videoTitle}"를 대중적인 입구로 사용하고, "${schoolOfLifeCore || "보편적인 인간 모순"}"을 깊이 있는 내면 주제로 확장합니다. 가장 강한 대안은 영어권 시청자가 즉시 이해할 수 있는 짧은 제목을 쓰되, 설명/검토 단계에서는 왜 클릭되는지 한글로 명확히 확인할 수 있어야 합니다. 이미지 생성 프롬프트는 제작 도구 호환성을 위해 영어로 유지합니다.`
   };
 
   const hasGeminiKey = (customGeminiApiKey && customGeminiApiKey.trim() !== "") || (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== "");
@@ -728,7 +728,14 @@ Title: ${videoTitle}
 Psych2Go shell: ${psy2goShell}
 School of Life core: ${schoolOfLifeCore}
 Cynical wit point: ${cynicalWitPoint}
-Trojan remake tip: ${trojanRemakeTip}`,
+Trojan remake tip: ${trojanRemakeTip}
+
+Language rules:
+- The target channel is global, so every title field must be written in natural, clickable English.
+- Use enTitle as the Korean translation of the English title, not as another English title.
+- All non-prompt explanatory fields must be Korean: trigger, style, thumbnail concept, thumbnail style, and strategyAnalysis.
+- Only midjourneyPrompt must remain English because it is meant for image-generation tools.
+- Keep the Korean translation practical and easy for a Korean creator to review.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
