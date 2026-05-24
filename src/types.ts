@@ -124,6 +124,7 @@ export interface YouTubeSearchResponse {
   effectiveQuery?: string;
   wasTranslated?: boolean;
   translationNote?: string | null;
+  requestedCount?: number;
 }
 
 export interface ABPlanResponse {
@@ -138,5 +139,4 @@ export interface ABPlanResponse {
   thumbnailD: { concept: string; midjourneyPrompt: string; style: string };
   strategyAnalysis: string;
 }
-
 

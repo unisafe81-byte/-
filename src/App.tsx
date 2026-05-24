@@ -1058,6 +1058,9 @@ export default function App() {
                       실제 검색어
                     </span>
                     <span className="text-xs text-white font-mono break-all">{searchResult.effectiveQuery}</span>
+                    <span className="text-[10px] text-gray-300 bg-gray-900 border border-gray-800 rounded px-2 py-1">
+                      출력 {searchResult.videos.length}/{searchResult.requestedCount || maxResults}개
+                    </span>
                     {searchResult.wasTranslated && (
                       <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
                         글로벌 시장용 영어 의역 적용

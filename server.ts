@@ -63,13 +63,17 @@ function parseIsoDuration(duration = "PT0S"): string {
   return parts.join(":");
 }
 
-function buildFallbackVideos(query: string): any[] {
+function normalizeResultLimit(value: any): number {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 5;
+  return Math.min(parsed, 50);
+}
+
+function buildFallbackVideos(query: string, count = 5): any[] {
   const baseTitle = query || "psychology content strategy";
-  return [
+  const templates = [
     {
-      id: "fallback-1",
       title: `Why ${baseTitle} quietly changes how people see themselves`,
-      channelId: "fallback-channel-1",
       channelTitle: "Psychology Strategy Model",
       thumbnail: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
       viewCount: "820K",
@@ -86,9 +90,7 @@ function buildFallbackVideos(query: string): any[] {
       }
     },
     {
-      id: "fallback-2",
       title: `The hidden pattern behind ${baseTitle}`,
-      channelId: "fallback-channel-2",
       channelTitle: "Human Behavior Lab",
       thumbnail: "https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg",
       viewCount: "410K",
@@ -105,6 +107,17 @@ function buildFallbackVideos(query: string): any[] {
       }
     }
   ];
+
+  return Array.from({ length: normalizeResultLimit(count) }, (_, index) => {
+    const template = templates[index % templates.length];
+    return {
+      ...template,
+      id: `fallback-${index + 1}`,
+      channelId: `fallback-channel-${(index % templates.length) + 1}`,
+      title: index < templates.length ? template.title : `${template.title} - angle ${index + 1}`,
+      publishedAt: new Date(Date.now() - 86400000 * index).toISOString()
+    };
+  });
 }
 
 function extractYouTubeVideoId(input: string): string | null {
@@ -533,6 +546,7 @@ app.post("/api/youtube-search", async (req, res) => {
     return;
   }
 
+  const resultLimit = normalizeResultLimit(maxResults);
   const effectiveSearch = await getEffectiveSearchQuery(String(query), String(market), customGeminiApiKey);
   const youtubeKey = getYouTubeKey(customApiKey);
   if (!youtubeKey) {
@@ -540,11 +554,12 @@ app.post("/api/youtube-search", async (req, res) => {
       isRealData: false,
       searchSummary: `No YouTube API key was configured, so simulated benchmark data is being shown. Search query used: "${effectiveSearch.query}".`,
       opportunityFormula: "Use the simulated result to shape the concept, then add a YouTube Data API key for live trend validation.",
-      videos: buildFallbackVideos(effectiveSearch.query),
+      videos: buildFallbackVideos(effectiveSearch.query, resultLimit),
       youtubeError: "YOUTUBE_API_KEY is missing.",
       effectiveQuery: effectiveSearch.query,
       wasTranslated: effectiveSearch.translated,
-      translationNote: effectiveSearch.translationNote || null
+      translationNote: effectiveSearch.translationNote || null,
+      requestedCount: resultLimit
     });
     return;
   }
@@ -563,7 +578,7 @@ app.post("/api/youtube-search", async (req, res) => {
     searchUrl.searchParams.set("type", "video");
     searchUrl.searchParams.set("q", effectiveSearch.query);
     searchUrl.searchParams.set("regionCode", market === "US" ? "US" : "KR");
-    searchUrl.searchParams.set("maxResults", String(Math.min(Number(maxResults) || 5, 10)));
+    searchUrl.searchParams.set("maxResults", String(resultLimit));
     searchUrl.searchParams.set("order", "relevance");
     searchUrl.searchParams.set("key", youtubeKey);
     if (durationFilter !== "all") searchUrl.searchParams.set("videoDuration", durationFilter);
@@ -588,7 +603,8 @@ app.post("/api/youtube-search", async (req, res) => {
         youtubeError: null,
         effectiveQuery: effectiveSearch.query,
         wasTranslated: effectiveSearch.translated,
-        translationNote: effectiveSearch.translationNote || null
+        translationNote: effectiveSearch.translationNote || null,
+        requestedCount: resultLimit
       });
       return;
     }
@@ -620,7 +636,7 @@ app.post("/api/youtube-search", async (req, res) => {
       }
     }
 
-    const videos = (detailData.items || []).map((item: any) => {
+    const videos = (detailData.items || []).slice(0, resultLimit).map((item: any) => {
       const stats = item.statistics || {};
       const snippet = item.snippet || {};
       const views = Number(stats.viewCount || 0);
@@ -655,18 +671,20 @@ app.post("/api/youtube-search", async (req, res) => {
       youtubeError: null,
       effectiveQuery: effectiveSearch.query,
       wasTranslated: effectiveSearch.translated,
-      translationNote: effectiveSearch.translationNote || null
+      translationNote: effectiveSearch.translationNote || null,
+      requestedCount: resultLimit
     });
   } catch (error: any) {
     res.json({
       isRealData: false,
       searchSummary: `YouTube API call failed, so simulated benchmark data is being shown. Search query used: "${effectiveSearch.query}".`,
       opportunityFormula: "Check that the API key is valid and that YouTube Data API v3 is enabled in Google Cloud.",
-      videos: buildFallbackVideos(effectiveSearch.query),
+      videos: buildFallbackVideos(effectiveSearch.query, resultLimit),
       youtubeError: error?.message || "YouTube API request failed.",
       effectiveQuery: effectiveSearch.query,
       wasTranslated: effectiveSearch.translated,
-      translationNote: effectiveSearch.translationNote || null
+      translationNote: effectiveSearch.translationNote || null,
+      requestedCount: resultLimit
     });
   }
 });
