@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import Header from "./components/Header";
 import { benchmarkChannels } from "./benchmarkData";
-import { FusionAnalysisResponse, YouTubeSearchResponse, YouTubeVideo, ABPlanResponse } from "./types";
+import { FusionAnalysisResponse, YouTubeSearchResponse, YouTubeVideo, ABPlanResponse, MasterScriptResponse } from "./types";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>("research");
@@ -421,6 +421,15 @@ export default function App() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [promptCopied, setPromptCopied] = useState<boolean>(false);
   const [activeTabResult, setActiveTabResult] = useState<"script" | "pipeline" | "seo" | "prompt">("script");
+  const [sourceUrl, setSourceUrl] = useState<string>("");
+  const [sourceTranscript, setSourceTranscript] = useState<string>("");
+  const [originalScript, setOriginalScript] = useState<string>("");
+  const [sourceDuration, setSourceDuration] = useState<string>("");
+  const [preservationNotes, setPreservationNotes] = useState<string>("");
+  const [masterScriptResult, setMasterScriptResult] = useState<MasterScriptResponse | null>(null);
+  const [isMasterScriptLoading, setIsMasterScriptLoading] = useState<boolean>(false);
+  const [masterScriptError, setMasterScriptError] = useState<string | null>(null);
+  const [masterScriptTab, setMasterScriptTab] = useState<"psych2go" | "school">("psych2go");
 
   // Load Preset directly from Benchmark Library to Trojan Horse Studio
   const handleLoadPreset = (preset: {
@@ -525,6 +534,61 @@ export default function App() {
     if (success) {
       setPromptCopied(true);
       setTimeout(() => setPromptCopied(false), 2000);
+    }
+  };
+
+  const getSelectedABBlueprint = () => {
+    if (!abPlanResult) return null;
+    const option = promptTab === "ALL" ? "C" : promptTab;
+    const titleObj = option === "A" ? abPlanResult.titleA : option === "B" ? abPlanResult.titleB : option === "D" ? abPlanResult.titleD : abPlanResult.titleC;
+    const thumbObj = option === "A" ? abPlanResult.thumbnailA : option === "B" ? abPlanResult.thumbnailB : option === "D" ? abPlanResult.thumbnailD : abPlanResult.thumbnailC;
+    return { option, titleObj, thumbObj };
+  };
+
+  const handleGenerateMasterScripts = async () => {
+    const blueprint = getSelectedABBlueprint();
+    if (!blueprint) {
+      setMasterScriptError("먼저 1단계에서 제목/썸네일 기획안을 생성해 주세요.");
+      return;
+    }
+    if (!sourceUrl.trim() && !sourceTranscript.trim() && !originalScript.trim() && !preservationNotes.trim()) {
+      setMasterScriptError("원본 영상 링크, 자막/스크립트, 원본 대본, 보존 메모 중 최소 하나를 입력해 주세요.");
+      return;
+    }
+
+    setIsMasterScriptLoading(true);
+    setMasterScriptError(null);
+    setMasterScriptResult(null);
+
+    try {
+      const response = await fetch("/api/generate-master-scripts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selectedTitle: blueprint.titleObj.title,
+          selectedTitleKr: blueprint.titleObj.enTitle || "",
+          thumbnailConcept: blueprint.thumbObj.concept,
+          imagePrompt: blueprint.thumbObj.midjourneyPrompt,
+          psychologicalTrigger: blueprint.titleObj.trigger,
+          sourceUrl,
+          sourceTranscript,
+          originalScript,
+          sourceDuration,
+          preservationNotes,
+          customGeminiApiKey
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "마스터 대본 생성에 실패했습니다.");
+      }
+      setMasterScriptResult(data);
+      setMasterScriptTab("psych2go");
+    } catch (err: any) {
+      console.error(err);
+      setMasterScriptError(err.message || "마스터 대본 생성 중 서버 통신 오류가 발생했습니다.");
+    } finally {
+      setIsMasterScriptLoading(false);
     }
   };
 
@@ -2023,12 +2087,159 @@ export default function App() {
               <div className="flex-grow border-t border-gray-850"></div>
               <span className="flex-shrink mx-4 text-xs font-black text-gray-400 uppercase tracking-widest bg-gray-950 px-3 py-1 rounded-full border border-gray-850 flex items-center gap-1">
                 <FileText className="w-4 h-4 text-indigo-400" />
-                [2단계] 트로이 목마 레시피 미세 조정 & 시네마틱 대본 생성
+                [2단계] 원본 영상 기반 마스터 대본 설계실
               </span>
               <div className="flex-grow border-t border-gray-850"></div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <div className="bg-slate-900/35 rounded-2xl border border-gray-800 p-6 space-y-6" id="master-script-studio">
+              <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-5 border-b border-gray-800 pb-5">
+                <div className="space-y-2 max-w-3xl">
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2.5">
+                    <FileText className="w-6 h-6 text-indigo-400" />
+                    [2단계] 원본 영상 기반 마스터 대본 설계실
+                  </h2>
+                  <p className="text-xs text-gray-400 leading-relaxed">
+                    유튜브 링크, 자막/스크립트, 원본 대본, 음성/영상 파일 메모를 바탕으로 원본 영상의 길이와 정보량을 유지한 채 Psych2Go와 School of Life 구조 복제 대본을 각각 영한 병렬로 출력합니다.
+                  </p>
+                </div>
+                {abPlanResult && (
+                  <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-xl p-3 text-left min-w-[260px]">
+                    <p className="text-[10px] text-indigo-300 font-black uppercase tracking-widest mb-1">선택 기준 기획안</p>
+                    <p className="text-xs font-bold text-white leading-snug">{getSelectedABBlueprint()?.titleObj.title}</p>
+                    {getSelectedABBlueprint()?.titleObj.enTitle && (
+                      <p className="text-[10px] text-amber-300 mt-1">{getSelectedABBlueprint()?.titleObj.enTitle}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                <div className="xl:col-span-5 space-y-4">
+                  <div className="bg-gray-950/60 border border-gray-850 rounded-xl p-4 space-y-3">
+                    <h3 className="text-xs font-black text-gray-200 uppercase tracking-widest">원본 자료 입력</h3>
+                    <input
+                      type="url"
+                      value={sourceUrl}
+                      onChange={(e) => setSourceUrl(e.target.value)}
+                      placeholder="YouTube 원본 링크"
+                      className="w-full bg-black/50 border border-gray-800 rounded-lg px-3 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+                    />
+                    <input
+                      type="text"
+                      value={sourceDuration}
+                      onChange={(e) => setSourceDuration(e.target.value)}
+                      placeholder="원본 영상 길이 예: 8:30 / 12:45"
+                      className="w-full bg-black/50 border border-gray-800 rounded-lg px-3 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+                    />
+                    <textarea
+                      rows={5}
+                      value={sourceTranscript}
+                      onChange={(e) => setSourceTranscript(e.target.value)}
+                      placeholder="유튜브 자막/스크립트 붙여넣기"
+                      className="w-full bg-black/50 border border-gray-800 rounded-lg p-3 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 leading-relaxed"
+                    />
+                    <textarea
+                      rows={5}
+                      value={originalScript}
+                      onChange={(e) => setOriginalScript(e.target.value)}
+                      placeholder="직접 확보한 원본 대본 붙여넣기"
+                      className="w-full bg-black/50 border border-gray-800 rounded-lg p-3 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 leading-relaxed"
+                    />
+                    <textarea
+                      rows={4}
+                      value={preservationNotes}
+                      onChange={(e) => setPreservationNotes(e.target.value)}
+                      placeholder="음성/영상 파일에서 확인한 핵심 내용, 반드시 살릴 장면, 누락 금지 포인트"
+                      className="w-full bg-black/50 border border-gray-800 rounded-lg p-3 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 leading-relaxed"
+                    />
+                    <div className="border border-dashed border-gray-750 rounded-lg p-3 text-[11px] text-gray-500 leading-relaxed">
+                      음성/영상 파일 업로드는 현재 입력 공간만 준비되어 있습니다. 파일 전사 기능을 붙이기 전까지는 전사 내용이나 핵심 메모를 위 칸에 넣어 주세요.
+                    </div>
+                    <button
+                      onClick={handleGenerateMasterScripts}
+                      disabled={isMasterScriptLoading}
+                      className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black transition-all ${
+                        isMasterScriptLoading
+                          ? "bg-gray-800 text-gray-500 border border-gray-750"
+                          : "bg-indigo-600 hover:bg-indigo-550 text-white shadow-lg shadow-indigo-500/10 cursor-pointer"
+                      }`}
+                    >
+                      {isMasterScriptLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>2채널 구조 복제 대본 생성 중...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          <span>Psych2Go / School of Life 대본 생성</span>
+                        </>
+                      )}
+                    </button>
+                    {masterScriptError && (
+                      <div className="bg-rose-950/20 border border-rose-500/20 rounded-lg p-3 text-[11px] text-rose-300">
+                        {masterScriptError}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="xl:col-span-7 space-y-4">
+                  {!masterScriptResult ? (
+                    <div className="bg-gray-950/40 border border-gray-850 rounded-xl p-8 text-center space-y-3 min-h-[360px] flex flex-col items-center justify-center">
+                      <BookOpen className="w-9 h-9 text-indigo-400" />
+                      <h3 className="text-sm font-bold text-white">원본 자료 기반 2채널 대본 출력 대기 중</h3>
+                      <p className="text-xs text-gray-400 max-w-md leading-relaxed">
+                        1단계에서 제목/썸네일 기획을 만든 뒤 원본 링크나 스크립트를 넣으면, 같은 원본 정보량을 Psych2Go 구조와 School of Life 구조로 각각 재구성합니다.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {masterScriptResult.quotaExceededFallback && (
+                        <div className="bg-amber-950/20 border border-amber-500/20 rounded-xl p-3 text-[11px] text-amber-200">
+                          API 키가 없거나 한도에 도달해 로컬 구조 샘플 대본을 출력했습니다. 원본 전체 스크립트와 Gemini API 키를 넣으면 더 긴 원본 길이 맞춤 대본으로 확장됩니다.
+                        </div>
+                      )}
+                      <div className="bg-gray-950/50 border border-gray-850 rounded-xl p-4">
+                        <p className="text-[10px] text-indigo-300 font-black uppercase tracking-widest mb-2">원본 보존 설계</p>
+                        <pre className="whitespace-pre-wrap text-[11px] text-gray-300 leading-relaxed font-sans">{masterScriptResult.sourceCoveragePlan}</pre>
+                      </div>
+                      <div className="flex bg-gray-900 p-1 rounded-xl border border-gray-850">
+                        <button
+                          onClick={() => setMasterScriptTab("psych2go")}
+                          className={`flex-1 py-2 text-center text-[11px] font-bold rounded-lg transition-all cursor-pointer ${masterScriptTab === "psych2go" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"}`}
+                        >
+                          Psych2Go 구조 대본
+                        </button>
+                        <button
+                          onClick={() => setMasterScriptTab("school")}
+                          className={`flex-1 py-2 text-center text-[11px] font-bold rounded-lg transition-all cursor-pointer ${masterScriptTab === "school" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"}`}
+                        >
+                          School of Life 구조 대본
+                        </button>
+                      </div>
+                      <div className="bg-black/60 border border-gray-850 rounded-xl p-4">
+                        <div className="flex justify-end mb-3">
+                          <button
+                            onClick={() => handleCopyResultText(masterScriptTab === "psych2go" ? masterScriptResult.psych2goScript : masterScriptResult.schoolOfLifeScript, `master-${masterScriptTab}`)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-indigo-950/70 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-900 cursor-pointer"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            {copiedId === `master-${masterScriptTab}` ? "복사 완료" : "대본 복사"}
+                          </button>
+                        </div>
+                        <pre className="whitespace-pre-wrap text-xs text-gray-300 leading-relaxed font-sans max-h-[680px] overflow-y-auto">
+                          {masterScriptTab === "psych2go" ? masterScriptResult.psych2goScript : masterScriptResult.schoolOfLifeScript}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="hidden grid-cols-1 lg:grid-cols-12 gap-8 items-start">
               
               {/* LEFT COLUMN: configurator steps Form (7 Cols) */}
               <div className="lg:col-span-7 bg-slate-900/30 rounded-2xl border border-gray-850 p-6 space-y-8" id="trojan-steps">

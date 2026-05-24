@@ -140,3 +140,9 @@ export interface ABPlanResponse {
   strategyAnalysis: string;
 }
 
+export interface MasterScriptResponse {
+  quotaExceededFallback?: boolean;
+  sourceCoveragePlan: string;
+  psych2goScript: string;
+  schoolOfLifeScript: string;
+}

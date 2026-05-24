@@ -863,6 +863,111 @@ Language rules:
   }
 });
 
+function buildMasterScriptFallback(body: any): any {
+  const {
+    selectedTitle,
+    selectedTitleKr,
+    thumbnailConcept,
+    psychologicalTrigger,
+    sourceUrl,
+    sourceTranscript,
+    originalScript,
+    sourceDuration,
+    preservationNotes
+  } = body;
+
+  const sourceMaterial = originalScript || sourceTranscript || preservationNotes || "원본 자료가 충분하지 않아 제목과 썸네일 기획을 기준으로 구조 샘플을 생성합니다.";
+  const duration = sourceDuration || "원본 영상 길이 기준";
+  const title = selectedTitle || "Why This Feeling Keeps Coming Back";
+  const titleKr = selectedTitleKr || "왜 이 감정은 계속 돌아오는가";
+
+  return {
+    quotaExceededFallback: true,
+    sourceCoveragePlan: `원본 기준: ${sourceUrl || "직접 입력 자료"}\n목표 길이: ${duration}\n보존 원칙: 원본 영상의 핵심 주장, 예시, 감정 흐름, 결론을 누락하지 않고 같은 길이대의 영한 병렬 대본으로 재구성합니다.\n활용 자료 요약: ${String(sourceMaterial).slice(0, 900)}`,
+    psych2goScript: `[Psych2Go 구조 복제 대본]\n\n[OPENING HOOK]\nEN: Have you ever clicked on a video because the title, "${title}", sounded a little too close to something you were afraid to admit?\nKR: 혹시 "${titleKr}"라는 제목이 차마 인정하기 어려웠던 내 마음과 너무 닮아서 영상을 누른 적이 있나요?\nVISUAL: Soft 2D character sitting alone with a small glowing screen.\nRETENTION: 시청자가 첫 문장에서 자기 경험을 대입하게 만드는 직접 질문 훅.\n\n[SIGN 1]\nEN: The first sign is that you keep explaining your pain as if you need permission to feel it.\nKR: 첫 번째 신호는, 내가 아픈 이유를 느끼기 전에 먼저 허락받으려는 것처럼 계속 설명하고 있다는 점입니다.\nVISUAL: Character holding a note full of crossed-out sentences.\nRETENTION: 리스트 구조로 다음 항목 기대감을 만듭니다.\n\n[SIGN 2]\nEN: The second sign is that your kindness has slowly become a strategy for avoiding rejection.\nKR: 두 번째 신호는, 친절함이 어느 순간 거절당하지 않기 위한 전략으로 바뀌었다는 것입니다.\nVISUAL: Cute character handing out pieces of itself as paper hearts.\nRETENTION: 제목의 감정 약속을 구체적 행동으로 회수합니다.\n\n[SOFT PSYCHOLOGY EXPLANATION]\nEN: Psychologists often describe this as a learned protection pattern. It does not mean you are weak. It means your mind once found a way to survive.\nKR: 심리학에서는 이런 모습을 학습된 보호 패턴으로 설명하기도 합니다. 이것은 당신이 약하다는 뜻이 아닙니다. 한때 마음이 살아남기 위해 찾아낸 방식이라는 뜻입니다.\nVISUAL: Warm diagram of a shield around a small character.\nRETENTION: 죄책감을 낮추고 채널에 대한 정서적 신뢰를 만듭니다.\n\n[CLOSING]\nEN: If this felt familiar, you are not alone. Maybe the first step is not to become colder, but to stop disappearing while being kind.\nKR: 이 이야기가 익숙하게 느껴졌다면, 당신만 그런 것이 아닙니다. 첫걸음은 차가운 사람이 되는 것이 아니라, 친절하면서도 나 자신을 사라지게 만들지 않는 것일지도 모릅니다.\nVISUAL: Character walking out of a soft shadow into morning light.\nRETENTION: 위로형 엔딩과 댓글/구독 전환 감정 형성.`,
+    schoolOfLifeScript: `[The School of Life 구조 복제 대본]\n\n[OPENING PARADOX]\nEN: We often imagine that the trouble with our lives is that we have not yet learned how to be loved. More often, the tragedy is that we learned too early how to make ourselves convenient.\nKR: 우리는 종종 삶의 문제가 아직 사랑받는 법을 배우지 못한 데 있다고 상상합니다. 그러나 더 자주 비극은, 우리가 너무 일찍 스스로를 편리한 존재로 만드는 법을 배웠다는 데 있습니다.\nVISUAL: Minimal figure standing beside a perfectly arranged but empty chair.\nRETENTION: 개인 고민을 인간 조건의 역설로 격상합니다.\n\n[DEEPENING]\nEN: A title like "${title}" attracts us not merely because it promises information, but because it offers a dignified language for a private humiliation.\nKR: "${titleKr}" 같은 제목이 우리를 끌어당기는 이유는 단순히 정보를 약속하기 때문이 아닙니다. 그것은 사적인 수치심에 품격 있는 언어를 제공하기 때문입니다.\nVISUAL: Abstract typography dissolving into a human silhouette.\nRETENTION: 클릭 이유를 지적 언어로 재해석해 몰입을 유지합니다.\n\n[HUMAN CONDITION]\nEN: To be human is to negotiate, again and again, between the wish to belong and the fear that belonging will require our disappearance.\nKR: 인간으로 산다는 것은 소속되고 싶은 욕망과, 소속되기 위해 내가 사라져야 할지도 모른다는 두려움 사이를 반복해서 협상하는 일입니다.\nVISUAL: Geometric bridge between two quiet rooms.\nRETENTION: 원본 감정을 보편적 철학 문제로 확장합니다.\n\n[RESOLUTION]\nEN: The cure is rarely a sudden act of confidence. It is the slower, more melancholy education of learning that our needs are not a crime.\nKR: 치유는 대개 갑작스러운 자신감의 폭발이 아닙니다. 우리의 욕구가 죄가 아니라는 사실을 천천히, 조금은 쓸쓸하게 배워가는 교육에 가깝습니다.\nVISUAL: Muted sunrise over a sparse desk.\nRETENTION: 해결책보다 수용과 재해석으로 장기 구독 욕구를 만듭니다.`
+  };
+}
+
+app.post("/api/generate-master-scripts", async (req, res) => {
+  const {
+    selectedTitle,
+    selectedTitleKr,
+    thumbnailConcept,
+    imagePrompt,
+    psychologicalTrigger,
+    sourceUrl,
+    sourceTranscript,
+    originalScript,
+    sourceDuration,
+    preservationNotes,
+    customGeminiApiKey
+  } = req.body || {};
+
+  if (!selectedTitle || (!sourceTranscript && !originalScript && !preservationNotes && !sourceUrl)) {
+    res.status(400).json({ error: "선택된 제목과 원본 자료 입력이 필요합니다." });
+    return;
+  }
+
+  const fallback = buildMasterScriptFallback(req.body);
+  const hasGeminiKey = (customGeminiApiKey && customGeminiApiKey.trim() !== "") || (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== "");
+  if (!hasGeminiKey) {
+    res.json(fallback);
+    return;
+  }
+
+  try {
+    const ai = getGeminiClient(customGeminiApiKey);
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: `Create two long-form benchmark-structure scripts for a global psychology YouTube channel.
+
+Selected English title: ${selectedTitle}
+Korean title translation for creator review: ${selectedTitleKr || ""}
+Thumbnail concept: ${thumbnailConcept || ""}
+Image prompt: ${imagePrompt || ""}
+Psychological trigger: ${psychologicalTrigger || ""}
+Original video URL: ${sourceUrl || ""}
+Original duration target: ${sourceDuration || ""}
+Creator preservation notes: ${preservationNotes || ""}
+
+Source transcript or original script:
+${originalScript || sourceTranscript || ""}
+
+Requirements:
+- Do not summarize. Preserve the source video's information density, examples, emotional beats, and logical flow as much as possible.
+- Match the original video's approximate length. If duration is given, plan English narration around 135 words per minute.
+- Output exactly two full scripts:
+  1. psych2goScript: a script following the Psych2Go narrative structure as closely as possible: direct viewer address, signs/list progression, soft psychological explanation, emotional validation, gentle CTA.
+  2. schoolOfLifeScript: a script following The School of Life narrative structure as closely as possible: universal human paradox, philosophical reframing, elegant essay narration, melancholy acceptance.
+- Every segment must include EN voiceover and KR translation so a Korean creator can review the meaning.
+- Include visual direction and retention purpose inside the script text.
+- Do not copy any original channel's exact sentences. Recreate the narrative structure, pacing, and retention architecture.
+- All image prompts may remain English; all review explanations must be Korean.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            sourceCoveragePlan: { type: Type.STRING },
+            psych2goScript: { type: Type.STRING },
+            schoolOfLifeScript: { type: Type.STRING }
+          },
+          required: ["sourceCoveragePlan", "psych2goScript", "schoolOfLifeScript"]
+        }
+      }
+    });
+    res.json(parseGeminiJson(response.text));
+  } catch (error: any) {
+    const message = error?.message || "";
+    if (message.includes("429") || message.toLowerCase().includes("quota")) {
+      res.json(fallback);
+      return;
+    }
+    res.status(500).json({ error: message || "Failed to generate master scripts." });
+  }
+});
+
 async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
