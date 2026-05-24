@@ -340,9 +340,9 @@ export default function App() {
 
 
 
-  const handleGenerateABTestingPlan = async (videoItem?: YouTubeVideo) => {
+  const handleGenerateABTestingPlan = async (videoItem?: YouTubeVideo): Promise<ABPlanResponse | null> => {
     const targetVideo = videoItem || selectedVideoSource;
-    if (!targetVideo) return;
+    if (!targetVideo) return null;
 
     setIsAbPlanLoading(true);
     setAbPlanError(null);
@@ -368,9 +368,11 @@ export default function App() {
 
       const data = await response.json();
       setAbPlanResult(data);
+      return data;
     } catch (err: any) {
       console.error(err);
       setAbPlanError(err.message || "A/B 테스트 기획을 도출 중 서버 통신 에러가 발생했습니다.");
+      return null;
     } finally {
       setIsAbPlanLoading(false);
     }
@@ -405,8 +407,12 @@ export default function App() {
       const video = data.video as YouTubeVideo;
       setSelectedVideoSource(video);
       setAbPlanResult(null);
+      setMasterScriptResult(null);
       setPromptTab("ALL");
-      await handleGenerateABTestingPlan(video);
+      const plan = await handleGenerateABTestingPlan(video);
+      if (plan) {
+        await generateMasterScriptsFromPlan(plan, video, buildSourceDefaultsFromVideo(video, cleanUrl));
+      }
     } catch (err: any) {
       console.error(err);
       setExternalVideoError(err.message || "외부 영상 분석 중 오류가 발생했습니다.");
@@ -504,11 +510,13 @@ export default function App() {
     }
   };
 
-  const handleInjectToTrojan = (video: YouTubeVideo) => {
+  const handleInjectToTrojan = async (video: YouTubeVideo) => {
     // Set targeted video source
     setSelectedVideoSource(video);
     setAbPlanResult(null);
     setAbPlanError(null);
+    setMasterScriptResult(null);
+    setMasterScriptError(null);
     
     // Inject components automatically as high-tier inspiration
     setPainPoint(video.title);
@@ -521,7 +529,10 @@ export default function App() {
     setActiveTab("trojan");
 
     // Automatically generate the A/B testing blueprint
-    handleGenerateABTestingPlan(video);
+    const plan = await handleGenerateABTestingPlan(video);
+    if (plan) {
+      await generateMasterScriptsFromPlan(plan, video);
+    }
 
     // Scroll smoothly to target form
     setTimeout(() => {
@@ -543,6 +554,79 @@ export default function App() {
     const titleObj = option === "A" ? abPlanResult.titleA : option === "B" ? abPlanResult.titleB : option === "D" ? abPlanResult.titleD : abPlanResult.titleC;
     const thumbObj = option === "A" ? abPlanResult.thumbnailA : option === "B" ? abPlanResult.thumbnailB : option === "D" ? abPlanResult.thumbnailD : abPlanResult.thumbnailC;
     return { option, titleObj, thumbObj };
+  };
+
+  const getABBlueprintFromPlan = (plan: ABPlanResponse, option: "A" | "B" | "C" | "D" = "C") => {
+    const titleObj = option === "A" ? plan.titleA : option === "B" ? plan.titleB : option === "D" ? plan.titleD : plan.titleC;
+    const thumbObj = option === "A" ? plan.thumbnailA : option === "B" ? plan.thumbnailB : option === "D" ? plan.thumbnailD : plan.thumbnailC;
+    return { option, titleObj, thumbObj };
+  };
+
+  const buildSourceDefaultsFromVideo = (video: YouTubeVideo, sourceLink = "") => {
+    const inferredSourceUrl = sourceLink || (video.id && !video.id.startsWith("fallback-") ? `https://www.youtube.com/watch?v=${video.id}` : "");
+    return {
+      sourceUrl: inferredSourceUrl,
+      sourceDuration: video.duration || "",
+      preservationNotes: `[자동 생성 원본 보존 메모]
+원본/샘플 제목: ${video.title}
+채널: ${video.channelTitle}
+조회수: ${video.viewCount}
+심리 외피: ${video.analysis.psy2goShell}
+철학적 핵심: ${video.analysis.schoolOfLifeCore}
+냉소/반전 포인트: ${video.analysis.cynicalWitPoint}
+리메이크 핵심: ${video.analysis.trojanRemakeTip}
+
+이 자료를 기준으로 원본 영상의 감정 흐름, 핵심 주장, 예시, 결론을 누락하지 않고 Psych2Go 구조와 School of Life 구조의 영한 병렬 대본으로 각각 재구성한다.`
+    };
+  };
+
+  const generateMasterScriptsFromPlan = async (
+    plan: ABPlanResponse,
+    video: YouTubeVideo,
+    sourceDefaults = buildSourceDefaultsFromVideo(video)
+  ) => {
+    const blueprint = getABBlueprintFromPlan(plan, "C");
+    const nextSourceUrl = sourceDefaults.sourceUrl || sourceUrl.trim();
+    const nextSourceDuration = sourceDefaults.sourceDuration || sourceDuration.trim();
+    const nextPreservationNotes = sourceDefaults.preservationNotes || preservationNotes.trim();
+
+    setSourceUrl(nextSourceUrl);
+    setSourceDuration(nextSourceDuration);
+    setPreservationNotes(nextPreservationNotes);
+    setIsMasterScriptLoading(true);
+    setMasterScriptError(null);
+    setMasterScriptResult(null);
+
+    try {
+      const response = await fetch("/api/generate-master-scripts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selectedTitle: blueprint.titleObj.title,
+          selectedTitleKr: blueprint.titleObj.enTitle || "",
+          thumbnailConcept: blueprint.thumbObj.concept,
+          imagePrompt: blueprint.thumbObj.midjourneyPrompt,
+          psychologicalTrigger: blueprint.titleObj.trigger,
+          sourceUrl: nextSourceUrl,
+          sourceTranscript,
+          originalScript,
+          sourceDuration: nextSourceDuration,
+          preservationNotes: nextPreservationNotes,
+          customGeminiApiKey
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "마스터 대본 생성에 실패했습니다.");
+      }
+      setMasterScriptResult(data);
+      setMasterScriptTab("psych2go");
+    } catch (err: any) {
+      console.error(err);
+      setMasterScriptError(err.message || "마스터 대본 생성 중 서버 통신 오류가 발생했습니다.");
+    } finally {
+      setIsMasterScriptLoading(false);
+    }
   };
 
   const handleGenerateMasterScripts = async () => {
@@ -1442,7 +1526,7 @@ export default function App() {
                     ) : (
                       <>
                         <Search className="w-4 h-4" />
-                        <span>링크로 A/B 기획 생성</span>
+                        <span>링크로 A/B 기획 + 대본 생성</span>
                       </>
                     )}
                   </button>
@@ -2052,7 +2136,7 @@ export default function App() {
                     아직 로드된 벤치마크 비디오가 없습니다. [유튜브 오리지널 트렌드 수색대] 탭에서 원하는 영상을 검색하고 <strong>대본 연동 ⚡</strong> 버튼을 눌러주시거나 아래 버튼으로 임시 생성해보세요:
                   </p>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const tempVideo: YouTubeVideo = {
                         title: "타인의 가스라이팅과 극도의 무기력에 시달리는 소심한 이들의 심리",
                         channelTitle: "Psychology Center",
@@ -2072,7 +2156,12 @@ export default function App() {
                         }
                       };
                       setSelectedVideoSource(tempVideo);
-                      handleGenerateABTestingPlan(tempVideo);
+                      setMasterScriptResult(null);
+                      setMasterScriptError(null);
+                      const plan = await handleGenerateABTestingPlan(tempVideo);
+                      if (plan) {
+                        await generateMasterScriptsFromPlan(plan, tempVideo);
+                      }
                     }}
                     className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-950 hover:bg-indigo-900 border border-indigo-800 text-[11px] font-bold text-indigo-300 cursor-pointer"
                   >
@@ -2186,7 +2275,15 @@ export default function App() {
                 </div>
 
                 <div className="xl:col-span-7 space-y-4">
-                  {!masterScriptResult ? (
+                  {isMasterScriptLoading ? (
+                    <div className="bg-gray-950/40 border border-indigo-500/20 rounded-xl p-8 text-center space-y-3 min-h-[360px] flex flex-col items-center justify-center">
+                      <Loader2 className="w-9 h-9 text-indigo-400 animate-spin" />
+                      <h3 className="text-sm font-bold text-white">2채널 구조 복제 대본 생성 중</h3>
+                      <p className="text-xs text-gray-400 max-w-md leading-relaxed">
+                        1단계 제목/썸네일 기획을 기준으로 Psych2Go 구조 대본과 School of Life 구조 대본을 영한 병렬로 생성하고 있습니다.
+                      </p>
+                    </div>
+                  ) : !masterScriptResult ? (
                     <div className="bg-gray-950/40 border border-gray-850 rounded-xl p-8 text-center space-y-3 min-h-[360px] flex flex-col items-center justify-center">
                       <BookOpen className="w-9 h-9 text-indigo-400" />
                       <h3 className="text-sm font-bold text-white">원본 자료 기반 2채널 대본 출력 대기 중</h3>
