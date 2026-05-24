@@ -1,0 +1,6 @@
+{
+  "name": "심리 유튜브 기획 발전기",
+  "description": "Psych2Go의 파괴적 클릭 유치와 The School of Life의 철학적 통찰을 융합하는 3세대 글로벌 유튜브 '트로이 목마' 대본 시뮬레이터 및 스튜디오 에이드",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
