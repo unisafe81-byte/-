@@ -322,6 +322,9 @@ export default function App() {
   const [abPlanResult, setAbPlanResult] = useState<ABPlanResponse | null>(null);
   const [isAbPlanLoading, setIsAbPlanLoading] = useState<boolean>(false);
   const [abPlanError, setAbPlanError] = useState<string | null>(null);
+  const [externalVideoUrl, setExternalVideoUrl] = useState<string>("");
+  const [isExternalVideoLoading, setIsExternalVideoLoading] = useState<boolean>(false);
+  const [externalVideoError, setExternalVideoError] = useState<string | null>(null);
 
   // States for prompt and title result workspace
   const [promptTab, setPromptTab] = useState<"ALL" | "A" | "B" | "C" | "D">("ALL");
@@ -370,6 +373,45 @@ export default function App() {
       setAbPlanError(err.message || "A/B 테스트 기획을 도출 중 서버 통신 에러가 발생했습니다.");
     } finally {
       setIsAbPlanLoading(false);
+    }
+  };
+
+  const handleLoadExternalVideo = async () => {
+    const cleanUrl = externalVideoUrl.trim();
+    if (!cleanUrl) {
+      setExternalVideoError("YouTube 영상 주소를 입력해 주세요.");
+      return;
+    }
+
+    setIsExternalVideoLoading(true);
+    setExternalVideoError(null);
+    setAbPlanError(null);
+
+    try {
+      const response = await fetch("/api/youtube-video-from-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: cleanUrl,
+          customApiKey: customYouTubeApiKey
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "외부 YouTube 영상을 불러오지 못했습니다.");
+      }
+
+      const video = data.video as YouTubeVideo;
+      setSelectedVideoSource(video);
+      setAbPlanResult(null);
+      setPromptTab("ALL");
+      await handleGenerateABTestingPlan(video);
+    } catch (err: any) {
+      console.error(err);
+      setExternalVideoError(err.message || "외부 영상 분석 중 오류가 발생했습니다.");
+    } finally {
+      setIsExternalVideoLoading(false);
     }
   };
 
@@ -1278,6 +1320,73 @@ export default function App() {
                     <span className="text-[11px] font-bold text-indigo-300">
                       벤치마크 연동: {selectedVideoSource.channelTitle} ({selectedVideoSource.viewCount})
                     </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-gray-950/45 border border-gray-850 rounded-xl p-4 space-y-3">
+                <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+                  <div className="flex-1 space-y-1">
+                    <label className="text-[11px] font-black text-gray-300 uppercase tracking-widest flex items-center gap-1.5">
+                      <ArrowUpRight className="w-3.5 h-3.5 text-indigo-400" />
+                      외부 YouTube 벤치마크 링크
+                    </label>
+                    <input
+                      type="url"
+                      value={externalVideoUrl}
+                      onChange={(e) => {
+                        setExternalVideoUrl(e.target.value);
+                        setExternalVideoError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleLoadExternalVideo();
+                      }}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      className="w-full bg-black/60 border border-gray-800 rounded-lg px-3 py-2.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+                  <button
+                    onClick={handleLoadExternalVideo}
+                    disabled={isExternalVideoLoading}
+                    className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black border transition-all shrink-0 ${
+                      isExternalVideoLoading
+                        ? "bg-gray-800 text-gray-500 border-gray-750 pointer-events-none"
+                        : "bg-indigo-600/30 text-indigo-300 border-indigo-500/30 hover:bg-indigo-600/45 active:scale-95 cursor-pointer"
+                    }`}
+                  >
+                    {isExternalVideoLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>불러오는 중</span>
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-4 h-4" />
+                        <span>링크로 A/B 기획 생성</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                {externalVideoError && (
+                  <div className="text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2">
+                    {externalVideoError}
+                  </div>
+                )}
+                {selectedVideoSource && (
+                  <div className="flex items-center gap-3 bg-black/40 border border-gray-850 rounded-lg p-2.5">
+                    {selectedVideoSource.thumbnail && (
+                      <img
+                        src={selectedVideoSource.thumbnail}
+                        alt=""
+                        className="w-20 h-12 object-cover rounded-md border border-gray-800 bg-gray-900 shrink-0"
+                      />
+                    )}
+                    <div className="min-w-0 text-left">
+                      <p className="text-xs font-bold text-white truncate">{selectedVideoSource.title}</p>
+                      <p className="text-[10px] text-gray-500 truncate">
+                        {selectedVideoSource.channelTitle} · {selectedVideoSource.viewCount} · {selectedVideoSource.duration}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>

@@ -107,6 +107,29 @@ function buildFallbackVideos(query: string): any[] {
   ];
 }
 
+function extractYouTubeVideoId(input: string): string | null {
+  try {
+    const value = input.trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(value)) return value;
+
+    const url = new URL(value);
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+    }
+
+    const watchId = url.searchParams.get("v");
+    if (watchId && /^[a-zA-Z0-9_-]{11}$/.test(watchId)) return watchId;
+
+    const parts = url.pathname.split("/").filter(Boolean);
+    const markerIndex = parts.findIndex((part) => ["embed", "shorts", "live"].includes(part));
+    const pathId = markerIndex >= 0 ? parts[markerIndex + 1] : null;
+    return pathId && /^[a-zA-Z0-9_-]{11}$/.test(pathId) ? pathId : null;
+  } catch {
+    return null;
+  }
+}
+
 // Graceful Offline Fallback Generator for the Trojan Horse Planning & Script Engine in case of Gemini Quota limits (429)
 function generateFusionFallback(body: any): any {
   const { 
@@ -566,6 +589,104 @@ app.post("/api/youtube-search", async (req, res) => {
       videos: buildFallbackVideos(String(query)),
       youtubeError: error?.message || "YouTube API request failed."
     });
+  }
+});
+
+app.post("/api/youtube-video-from-url", async (req, res) => {
+  const { url, customApiKey } = req.body || {};
+  const videoId = extractYouTubeVideoId(String(url || ""));
+
+  if (!videoId) {
+    res.status(400).json({ error: "A valid YouTube video URL is required." });
+    return;
+  }
+
+  const youtubeKey = getYouTubeKey(customApiKey);
+  if (!youtubeKey) {
+    res.json({
+      video: {
+        id: videoId,
+        title: `External YouTube benchmark (${videoId})`,
+        channelId: "",
+        channelTitle: "External YouTube",
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        viewCount: "N/A",
+        likeCount: "N/A",
+        subscriberCount: "N/A",
+        viewToSubRatio: "N/A",
+        duration: "N/A",
+        publishedAt: "",
+        analysis: {
+          psy2goShell: "Use this external video's topic as an accessible emotional hook.",
+          schoolOfLifeCore: "Reframe the borrowed topic as a broader human contradiction.",
+          cynicalWitPoint: "Add a dry, self-aware twist that makes the familiar topic feel newly uncomfortable.",
+          trojanRemakeTip: "Keep the original video's click promise, but change the emotional angle and visual metaphor."
+        }
+      },
+      warning: "YOUTUBE_API_KEY is missing, so only the video ID and thumbnail were loaded."
+    });
+    return;
+  }
+
+  try {
+    const detailUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+    detailUrl.searchParams.set("part", "snippet,statistics,contentDetails");
+    detailUrl.searchParams.set("id", videoId);
+    detailUrl.searchParams.set("key", youtubeKey);
+
+    const detailResponse = await fetch(detailUrl);
+    const detailData: any = await detailResponse.json().catch(() => ({}));
+    if (!detailResponse.ok) {
+      throw new Error(detailData?.error?.message || `YouTube video details returned ${detailResponse.status}`);
+    }
+
+    const item = detailData.items?.[0];
+    if (!item) {
+      res.status(404).json({ error: "The YouTube video could not be found or is not public." });
+      return;
+    }
+
+    const stats = item.statistics || {};
+    const snippet = item.snippet || {};
+    let subscriberCount = 0;
+    if (snippet.channelId) {
+      const channelUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+      channelUrl.searchParams.set("part", "statistics");
+      channelUrl.searchParams.set("id", snippet.channelId);
+      channelUrl.searchParams.set("key", youtubeKey);
+      const channelResponse = await fetch(channelUrl);
+      const channelData: any = await channelResponse.json().catch(() => ({}));
+      if (channelResponse.ok) {
+        subscriberCount = Number(channelData.items?.[0]?.statistics?.subscriberCount || 0);
+      }
+    }
+
+    const views = Number(stats.viewCount || 0);
+    const ratio = subscriberCount > 0 ? `${Math.round((views / subscriberCount) * 100)}%` : "N/A";
+
+    res.json({
+      video: {
+        id: item.id,
+        title: snippet.title || "Untitled video",
+        channelId: snippet.channelId || "",
+        channelTitle: snippet.channelTitle || "Unknown channel",
+        thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        viewCount: formatCompactNumber(stats.viewCount),
+        likeCount: formatCompactNumber(stats.likeCount),
+        subscriberCount: subscriberCount ? formatCompactNumber(subscriberCount) : "Hidden",
+        viewToSubRatio: ratio,
+        duration: parseIsoDuration(item.contentDetails?.duration),
+        publishedAt: snippet.publishedAt || "",
+        analysis: {
+          psy2goShell: `Benchmark the accessible hook behind "${snippet.title || "this video"}".`,
+          schoolOfLifeCore: "Turn the topic into a deeper reflection on identity, longing, shame, belonging, or self-protection.",
+          cynicalWitPoint: "Expose the small social performance hidden inside the original click promise.",
+          trojanRemakeTip: "Borrow the market signal, not the execution: change the metaphor, emotional wound, and payoff."
+        }
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to load the external YouTube video." });
   }
 });
 
