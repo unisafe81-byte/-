@@ -968,6 +968,168 @@ Requirements:
   }
 });
 
+function assignChannelGrade(subscriberCount: number, viewCount: number, videoCount: number): { grade: string; gradeScore: number } {
+  const avgViewsPerVideo = videoCount > 0 ? viewCount / videoCount : 0;
+  const engagementRatio = subscriberCount > 0 ? avgViewsPerVideo / subscriberCount : 0;
+  if (subscriberCount >= 1000000 && engagementRatio >= 0.3) return { grade: "A1", gradeScore: 9 };
+  if (subscriberCount >= 500000) return { grade: "A2", gradeScore: 8 };
+  if (subscriberCount >= 100000) return { grade: "A3", gradeScore: 7 };
+  if (subscriberCount >= 50000 && engagementRatio >= 0.2) return { grade: "B1", gradeScore: 6 };
+  if (subscriberCount >= 10000) return { grade: "B2", gradeScore: 5 };
+  if (subscriberCount >= 5000) return { grade: "B3", gradeScore: 4 };
+  if (subscriberCount >= 1000) return { grade: "C1", gradeScore: 3 };
+  if (subscriberCount >= 100) return { grade: "C2", gradeScore: 2 };
+  return { grade: "C3", gradeScore: 1 };
+}
+
+function estimateGrowthRate(subscriberCount: number, viewCount: number, videoCount: number): string {
+  const avgViewsPerVideo = videoCount > 0 ? viewCount / videoCount : 0;
+  const engagementRatio = subscriberCount > 0 ? avgViewsPerVideo / subscriberCount : 0;
+  if (engagementRatio >= 0.4) return "↑ 고성장";
+  if (engagementRatio >= 0.1) return "→ 안정";
+  return "↓ 정체";
+}
+
+function buildFallbackChannels(query: string, count = 10): any[] {
+  const niches = ["심리학", "자기계발", "인문학", "재테크", "철학", "마케팅", "건강", "역사", "과학", "교육"];
+  const names = ["인사이트", "지식채널", "브레인랩", "마인드셋", "성장TV", "탐구생활", "클래스룸", "아카데미", "스터디", "레코드"];
+  const channels = [];
+  for (let i = 0; i < count; i++) {
+    const topicIdx = i % niches.length;
+    const subBase = Math.floor(Math.pow(10, 3 + Math.random() * 3.5));
+    const viewBase = subBase * (Math.random() * 8 + 1);
+    const videoBase = Math.floor(Math.random() * 400) + 20;
+    const { grade, gradeScore } = assignChannelGrade(subBase, Math.floor(viewBase), videoBase);
+    channels.push({
+      channelId: `sim_ch_${i}_${Date.now()}`,
+      channelTitle: `${query ? query + " " : ""}${niches[topicIdx]} ${names[topicIdx]}`,
+      thumbnailUrl: "",
+      subscriberCount: subBase,
+      viewCount: Math.floor(viewBase),
+      videoCount: videoBase,
+      country: ["KR", "US", "JP", "GB", "KR", "KR"][i % 6],
+      category: niches[topicIdx],
+      grade,
+      gradeScore,
+      estimatedGrowthRate: estimateGrowthRate(subBase, Math.floor(viewBase), videoBase),
+      geminiInsight: `${niches[topicIdx]} 분야의 ${grade}급 채널 — 평균 조회수 ${formatCompactNumber(Math.floor(viewBase / videoBase))}회.`,
+      channelUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(niches[topicIdx])}`,
+      publishedAt: new Date(Date.now() - Math.random() * 365 * 5 * 86400000).toISOString()
+    });
+  }
+  return channels;
+}
+
+app.post("/api/channel-analytics", async (req, res) => {
+  const { query, region, maxResults: rawMax, customApiKey, customGeminiApiKey } = req.body || {};
+  const resultLimit = normalizeResultLimit(rawMax || 20);
+  const youtubeKey = getYouTubeKey(customApiKey);
+
+  if (!youtubeKey) {
+    const channels = buildFallbackChannels(String(query || "유튜브"), resultLimit);
+    res.json({
+      isRealData: false,
+      totalAnalyzed: channels.length,
+      channels,
+      searchSummary: `YouTube API 키가 없어 시뮬레이션 데이터를 표시합니다. 검색어: "${query || "유튜브"}"`
+    });
+    return;
+  }
+
+  try {
+    const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
+    searchUrl.searchParams.set("part", "snippet");
+    searchUrl.searchParams.set("type", "channel");
+    searchUrl.searchParams.set("q", String(query || ""));
+    if (region && region !== "ALL") searchUrl.searchParams.set("regionCode", String(region));
+    searchUrl.searchParams.set("maxResults", String(Math.min(resultLimit, 50)));
+    searchUrl.searchParams.set("key", youtubeKey);
+
+    const searchResponse = await fetch(searchUrl);
+    const searchData: any = await searchResponse.json().catch(() => ({}));
+    if (!searchResponse.ok) throw new Error(searchData?.error?.message || `Search failed: ${searchResponse.status}`);
+
+    const channelIds = (searchData.items || []).map((item: any) => item?.id?.channelId).filter(Boolean);
+    if (channelIds.length === 0) {
+      res.json({ isRealData: true, totalAnalyzed: 0, channels: [], searchSummary: `"${query}"에 대한 채널을 찾을 수 없습니다.` });
+      return;
+    }
+
+    const channelDetailUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+    channelDetailUrl.searchParams.set("part", "snippet,statistics,brandingSettings");
+    channelDetailUrl.searchParams.set("id", channelIds.join(","));
+    channelDetailUrl.searchParams.set("key", youtubeKey);
+
+    const channelDetailResponse = await fetch(channelDetailUrl);
+    const channelDetailData: any = await channelDetailResponse.json().catch(() => ({}));
+    if (!channelDetailResponse.ok) throw new Error(channelDetailData?.error?.message || `Channel details failed: ${channelDetailResponse.status}`);
+
+    const channels = (channelDetailData.items || []).map((item: any) => {
+      const stats = item.statistics || {};
+      const snippet = item.snippet || {};
+      const subs = Number(stats.subscriberCount || 0);
+      const views = Number(stats.viewCount || 0);
+      const vids = Number(stats.videoCount || 0);
+      const { grade, gradeScore } = assignChannelGrade(subs, views, vids);
+      return {
+        channelId: item.id,
+        channelTitle: snippet.title || "Unknown Channel",
+        thumbnailUrl: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
+        subscriberCount: subs,
+        viewCount: views,
+        videoCount: vids,
+        country: snippet.country || "N/A",
+        category: item.brandingSettings?.channel?.defaultLanguage || "N/A",
+        grade,
+        gradeScore,
+        estimatedGrowthRate: estimateGrowthRate(subs, views, vids),
+        geminiInsight: `구독자 ${formatCompactNumber(subs)}명, 총 조회수 ${formatCompactNumber(views)}회의 ${grade}급 채널.`,
+        channelUrl: `https://www.youtube.com/channel/${item.id}`,
+        publishedAt: snippet.publishedAt || ""
+      };
+    });
+
+    const hasGeminiKey = (customGeminiApiKey && customGeminiApiKey.trim() !== "") || process.env.GEMINI_API_KEY;
+    if (hasGeminiKey && channels.length > 0) {
+      try {
+        const ai = getGeminiClient(customGeminiApiKey);
+        const top = channels.slice(0, 8);
+        const summaries = top.map((c: any, i: number) =>
+          `${i + 1}. ${c.channelTitle} (구독자 ${formatCompactNumber(c.subscriberCount)}, 등급 ${c.grade}, 영상 ${c.videoCount}개)`
+        ).join("\n");
+        const insightRes = await ai.models.generateContent({
+          model: GEMINI_MODEL,
+          contents: `다음 유튜브 채널들에 대해 각각 한 줄씩 간결하고 통찰력 있는 한국어 분석을 제공해주세요 (채널 특성, 성장 잠재력, 콘텐츠 전략 등):\n${summaries}\n\nJSON 배열로만 응답: ["분석1", "분석2", ...]`,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: { type: Type.ARRAY, items: { type: Type.STRING } }
+          }
+        });
+        const insights: string[] = JSON.parse(insightRes.text || "[]");
+        top.forEach((c: any, i: number) => { if (insights[i]) c.geminiInsight = insights[i]; });
+      } catch {
+        // Keep default insights on Gemini failure
+      }
+    }
+
+    res.json({
+      isRealData: true,
+      totalAnalyzed: channels.length,
+      channels,
+      searchSummary: `"${query}" 검색으로 ${channels.length}개 채널 실시간 분석 완료.`
+    });
+
+  } catch (error: any) {
+    const channels = buildFallbackChannels(String(query || "유튜브"), resultLimit);
+    res.json({
+      isRealData: false,
+      totalAnalyzed: channels.length,
+      channels,
+      searchSummary: `YouTube API 오류로 시뮬레이션 데이터를 표시합니다. (${error?.message || "Unknown error"})`
+    });
+  }
+});
+
 async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

@@ -146,3 +146,27 @@ export interface MasterScriptResponse {
   psych2goScript: string;
   schoolOfLifeScript: string;
 }
+
+export interface ChannelAnalyticsItem {
+  channelId: string;
+  channelTitle: string;
+  thumbnailUrl: string;
+  subscriberCount: number;
+  viewCount: number;
+  videoCount: number;
+  country: string;
+  category: string;
+  grade: string;
+  gradeScore: number;
+  estimatedGrowthRate: string;
+  geminiInsight: string;
+  channelUrl: string;
+  publishedAt: string;
+}
+
+export interface ChannelAnalyticsResponse {
+  isRealData: boolean;
+  totalAnalyzed: number;
+  channels: ChannelAnalyticsItem[];
+  searchSummary: string;
+}

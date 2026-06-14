@@ -1,4 +1,4 @@
-import { Compass, BookOpen, BarChart3, HelpCircle, Layers, Zap, Search } from "lucide-react";
+import { Compass, BookOpen, BarChart3, HelpCircle, Layers, Zap, Search, TrendingUp } from "lucide-react";
 
 interface HeaderProps {
   activeTab: string;
@@ -58,6 +58,18 @@ export default function Header({ activeTab, setActiveTab }: HeaderProps) {
           >
             <BookOpen className="w-3.5 h-3.5" />
             벤치마킹 레퍼런스
+          </button>
+
+          <button
+            onClick={() => setActiveTab("analytics")}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              activeTab === "analytics"
+                ? "bg-emerald-600 text-white shadow"
+                : "text-gray-400 hover:text-white"
+            }`}
+          >
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+            채널 분석 대시보드
           </button>
         </nav>
       </div>
