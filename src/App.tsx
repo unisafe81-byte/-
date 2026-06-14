@@ -806,6 +806,47 @@ export default function App() {
     }
   ];
 
+  const buildClientFallbackChannels = (query: string, count: number): ChannelAnalyticsItem[] => {
+    const niches = ["심리학", "자기계발", "인문학", "재테크", "철학", "마케팅", "건강", "역사", "과학", "교육"];
+    const names = ["인사이트", "지식채널", "브레인랩", "마인드셋", "성장TV", "탐구생활", "클래스룸", "아카데미", "스터디", "레코드"];
+    const gradeList = [
+      { grade: "A1", gradeScore: 9, subs: 1500000 },
+      { grade: "A2", gradeScore: 8, subs: 720000 },
+      { grade: "A3", gradeScore: 7, subs: 230000 },
+      { grade: "B1", gradeScore: 6, subs: 87000 },
+      { grade: "B2", gradeScore: 5, subs: 34000 },
+      { grade: "B3", gradeScore: 4, subs: 11000 },
+      { grade: "C1", gradeScore: 3, subs: 4200 },
+      { grade: "C2", gradeScore: 2, subs: 680 },
+      { grade: "C3", gradeScore: 1, subs: 90 },
+    ];
+    const growths = ["↑ 고성장", "→ 안정", "↓ 정체"];
+    const countries = ["KR", "US", "JP", "GB", "KR", "KR"];
+    return Array.from({ length: count }, (_, i) => {
+      const g = gradeList[i % gradeList.length];
+      const niche = niches[i % niches.length];
+      const subs = g.subs + Math.floor(Math.random() * g.subs * 0.3);
+      const views = subs * (3 + Math.random() * 5);
+      const vids = 50 + Math.floor(Math.random() * 300);
+      return {
+        channelId: `demo_${i}`,
+        channelTitle: `${query} ${niche} ${names[i % names.length]}`,
+        thumbnailUrl: "",
+        subscriberCount: subs,
+        viewCount: Math.floor(views),
+        videoCount: vids,
+        country: countries[i % countries.length],
+        category: niche,
+        grade: g.grade,
+        gradeScore: g.gradeScore,
+        estimatedGrowthRate: growths[i % growths.length],
+        geminiInsight: `${niche} 분야의 ${g.grade}급 채널 — 구독자 ${(subs / 10000).toFixed(1)}만명, 평균 ${((views / vids) / 1000).toFixed(0)}K 조회수.`,
+        channelUrl: "",
+        publishedAt: new Date(Date.now() - i * 30 * 86400000).toISOString(),
+      };
+    });
+  };
+
   const handleChannelAnalytics = async () => {
     setIsAnalyticsLoading(true);
     setAnalyticsError(null);
@@ -824,8 +865,14 @@ export default function App() {
       if (!response.ok) throw new Error("채널 분석 요청이 실패했습니다.");
       const data: ChannelAnalyticsResponse = await response.json();
       setAnalyticsResult(data);
-    } catch (err: any) {
-      setAnalyticsError(err.message || "알 수 없는 오류가 발생했습니다.");
+    } catch {
+      const channels = buildClientFallbackChannels(analyticsQuery || "유튜브", analyticsMaxResults);
+      setAnalyticsResult({
+        isRealData: false,
+        totalAnalyzed: channels.length,
+        channels,
+        searchSummary: `"${analyticsQuery}" 시뮬레이션 데이터 (서버 미연결 — YouTube API 키 연동 시 실데이터 표시)`
+      });
     } finally {
       setIsAnalyticsLoading(false);
     }
