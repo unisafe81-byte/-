@@ -18,15 +18,29 @@ import {
   EyeOff,
   DollarSign,
   Clock,
-  Zap
+  Zap,
+  Play,
+  ThumbsUp,
+  MessageSquare,
+  Video,
+  Calendar,
 } from "lucide-react";
 import Header from "./components/Header";
-import { ChannelAnalyticsItem, ChannelAnalyticsResponse } from "./types";
+import {
+  ChannelAnalyticsItem,
+  ChannelAnalyticsResponse,
+  VideoSearchItem,
+  VideoSearchResponse,
+} from "./types";
+
+type Tab = "channels" | "videos";
 
 export default function App() {
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem("yt_api_key") || "");
   const [showKey, setShowKey] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<Tab>("channels");
 
+  // ── Channel states ──────────────────────────────────────────────
   const [analyticsQuery, setAnalyticsQuery] = useState<string>("심리학");
   const [analyticsRegion, setAnalyticsRegion] = useState<string>("KR");
   const [analyticsMaxResults, setAnalyticsMaxResults] = useState<number>(20);
@@ -39,12 +53,45 @@ export default function App() {
   const [analyticsSubRange, setAnalyticsSubRange] = useState<string>("all");
   const [analyticsHotOnly, setAnalyticsHotOnly] = useState<boolean>(false);
 
+  // ── Video states ────────────────────────────────────────────────
+  const [videoQuery, setVideoQuery] = useState<string>("심리학");
+  const [videoRegion, setVideoRegion] = useState<string>("KR");
+  const [videoMaxResults, setVideoMaxResults] = useState<number>(20);
+  const [isVideoLoading, setIsVideoLoading] = useState<boolean>(false);
+  const [videoResult, setVideoResult] = useState<VideoSearchResponse | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [videoSortField, setVideoSortField] = useState<string>("viewCount");
+  const [videoSortDir, setVideoSortDir] = useState<"asc" | "desc">("desc");
+  const [videoDurFilter, setVideoDurFilter] = useState<string>("all");
+  const [videoDateFilter, setVideoDateFilter] = useState<string>("all");
+
+  // ── API key ─────────────────────────────────────────────────────
   const saveApiKey = (key: string) => {
     setApiKey(key);
     if (key) localStorage.setItem("yt_api_key", key);
     else localStorage.removeItem("yt_api_key");
   };
 
+  // ── Shared helpers ───────────────────────────────────────────────
+  const formatNumber = (n: number) => {
+    if (n >= 1000000000) return `${(n / 1000000000).toFixed(1)}B`;
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 10000) return `${(n / 10000).toFixed(1)}만`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return String(n);
+  };
+
+  const relativeDate = (dateStr: string): string => {
+    if (!dateStr) return "-";
+    const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+    if (days === 0) return "오늘";
+    if (days <= 7) return `${days}일 전`;
+    if (days <= 30) return `${Math.floor(days / 7)}주 전`;
+    if (days <= 365) return `${Math.floor(days / 30)}개월 전`;
+    return `${Math.floor(days / 365)}년 전`;
+  };
+
+  // ── Channel helpers ──────────────────────────────────────────────
   const assignGrade = (subs: number, views: number, videos: number): { grade: string; gradeScore: number } => {
     const avgViews = views / Math.max(videos, 1);
     const engagement = avgViews / Math.max(subs, 1);
@@ -77,16 +124,63 @@ export default function App() {
     return "휴면";
   };
 
-  const relativeDate = (dateStr: string): string => {
-    if (!dateStr) return "-";
-    const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
-    if (days === 0) return "오늘";
-    if (days <= 7) return `${days}일 전`;
-    if (days <= 30) return `${Math.floor(days / 7)}주 전`;
-    if (days <= 365) return `${Math.floor(days / 30)}개월 전`;
-    return `${Math.floor(days / 365)}년 전`;
+  const gradeColor = (grade: string) => {
+    if (grade === "A1") return "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
+    if (grade === "A2") return "text-green-400 bg-green-500/10 border-green-500/30";
+    if (grade === "A3") return "text-teal-400 bg-teal-500/10 border-teal-500/30";
+    if (grade === "B1") return "text-blue-400 bg-blue-500/10 border-blue-500/30";
+    if (grade === "B2") return "text-indigo-400 bg-indigo-500/10 border-indigo-500/30";
+    if (grade === "B3") return "text-purple-400 bg-purple-500/10 border-purple-500/30";
+    if (grade === "C1") return "text-yellow-400 bg-yellow-500/10 border-yellow-500/30";
+    if (grade === "C2") return "text-orange-400 bg-orange-500/10 border-orange-500/30";
+    return "text-red-400 bg-red-500/10 border-red-500/30";
   };
 
+  const growthColor = (rate: string) => {
+    if (rate === "↑ 고성장") return "text-emerald-400";
+    if (rate === "→ 안정") return "text-blue-400";
+    return "text-red-400";
+  };
+
+  const freqColor = (freq: string) => {
+    if (freq === "매우 활발") return "text-emerald-400";
+    if (freq === "활발") return "text-green-400";
+    if (freq === "보통") return "text-blue-400";
+    if (freq === "비활발") return "text-yellow-400";
+    if (freq === "휴면") return "text-red-400";
+    return "text-gray-500";
+  };
+
+  // ── Video helpers ────────────────────────────────────────────────
+  const parseDuration = (iso: string): number => {
+    const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!m) return 0;
+    return (parseInt(m[1] || "0") * 3600) + (parseInt(m[2] || "0") * 60) + parseInt(m[3] || "0");
+  };
+
+  const formatDuration = (secs: number): string => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
+  const durLabel = (secs: number): string => {
+    if (secs <= 60) return "Shorts";
+    if (secs < 300) return "5분 미만";
+    if (secs < 1200) return "5~20분";
+    return "20분+";
+  };
+
+  const durColor = (secs: number) => {
+    if (secs <= 60) return "text-pink-400";
+    if (secs < 300) return "text-yellow-400";
+    if (secs < 1200) return "text-blue-400";
+    return "text-purple-400";
+  };
+
+  // ── Channel API ──────────────────────────────────────────────────
   const fetchRealChannels = async (key: string, query: string, region: string, maxResults: number): Promise<ChannelAnalyticsItem[]> => {
     const regionParam = region !== "ALL" ? `&regionCode=${region}` : "";
     const searchRes = await fetch(
@@ -107,7 +201,6 @@ export default function App() {
     const detailData = await detailRes.json();
     const channelItems: any[] = detailData.items || [];
 
-    // Fetch latest upload date for each channel in parallel
     const uploadResults = await Promise.allSettled(
       channelItems.map(async (ch: any) => {
         const uploadsId = ch.contentDetails?.relatedPlaylists?.uploads;
@@ -159,6 +252,50 @@ export default function App() {
     });
   };
 
+  // ── Video API ────────────────────────────────────────────────────
+  const fetchRealVideos = async (key: string, query: string, region: string, maxResults: number): Promise<VideoSearchItem[]> => {
+    const regionParam = region !== "ALL" ? `&regionCode=${region}` : "";
+    const searchRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query)}&maxResults=${maxResults}${regionParam}&order=viewCount&key=${key}`
+    );
+    if (!searchRes.ok) {
+      const err = await searchRes.json();
+      throw new Error(err.error?.message || "YouTube API 오류");
+    }
+    const searchData = await searchRes.json();
+    const items: any[] = searchData.items || [];
+    if (items.length === 0) return [];
+
+    const ids = items.map((i: any) => i.id.videoId).join(",");
+    const detailRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails&id=${ids}&key=${key}`
+    );
+    const detailData = await detailRes.json();
+    const detailMap = new Map<string, any>();
+    (detailData.items || []).forEach((v: any) => detailMap.set(v.id, v));
+
+    return items.map((item: any): VideoSearchItem => {
+      const vid = item.id.videoId;
+      const detail = detailMap.get(vid);
+      const secs = parseDuration(detail?.contentDetails?.duration || "PT0S");
+      return {
+        videoId: vid,
+        title: item.snippet?.title || "",
+        channelId: item.snippet?.channelId || "",
+        channelTitle: item.snippet?.channelTitle || "",
+        thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || "",
+        viewCount: parseInt(detail?.statistics?.viewCount || "0", 10),
+        likeCount: parseInt(detail?.statistics?.likeCount || "0", 10),
+        commentCount: parseInt(detail?.statistics?.commentCount || "0", 10),
+        durationSeconds: secs,
+        durationLabel: formatDuration(secs),
+        publishedAt: item.snippet?.publishedAt || "",
+        isShort: secs <= 60,
+      };
+    });
+  };
+
+  // ── Fallback data ────────────────────────────────────────────────
   const buildClientFallbackChannels = (query: string, count: number): ChannelAnalyticsItem[] => {
     const niches = ["심리학", "자기계발", "인문학", "재테크", "철학", "마케팅", "건강", "역사", "과학", "교육"];
     const names = ["인사이트", "지식채널", "브레인랩", "마인드셋", "성장TV", "탐구생활", "클래스룸", "아카데미", "스터디", "레코드"];
@@ -208,11 +345,42 @@ export default function App() {
     });
   };
 
+  const buildFallbackVideos = (query: string, count: number): VideoSearchItem[] => {
+    const titles = [
+      `${query}의 숨겨진 진실`, `당신이 몰랐던 ${query}`, `${query} 완전 정리`,
+      `${query}로 인생이 바뀌었다`, `${query} 전문가가 알려주는 비밀`,
+      `${query} 입문자를 위한 가이드`, `${query} 최신 트렌드 분석`, `${query} TOP 10`,
+      `${query}에 대한 오해와 진실`, `${query} 마스터하는 법`,
+    ];
+    const channels = ["인사이트TV", "지식채널e", "브레인랩", "성장TV", "탐구생활", "클래스룸", "아카데미", "스터디", "레코드", "마인드셋"];
+    const durOptions = [45, 180, 480, 720, 1200, 1800, 2400, 3000];
+
+    return Array.from({ length: count }, (_, i) => {
+      const secs = durOptions[i % durOptions.length];
+      const views = Math.floor(500000 / (i + 1) + Math.random() * 50000);
+      const daysAgo = Math.floor(i * 7 + Math.random() * 30);
+      return {
+        videoId: `demo_v_${i}`,
+        title: titles[i % titles.length],
+        channelId: `demo_ch_${i % 5}`,
+        channelTitle: channels[i % channels.length],
+        thumbnailUrl: "",
+        viewCount: views,
+        likeCount: Math.floor(views * 0.04),
+        commentCount: Math.floor(views * 0.005),
+        durationSeconds: secs,
+        durationLabel: formatDuration(secs),
+        publishedAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+        isShort: secs <= 60,
+      };
+    });
+  };
+
+  // ── Handlers ─────────────────────────────────────────────────────
   const handleChannelAnalytics = async () => {
     if (!analyticsQuery.trim()) return;
     setIsAnalyticsLoading(true);
     setAnalyticsError(null);
-
     if (apiKey.trim()) {
       try {
         const channels = await fetchRealChannels(apiKey.trim(), analyticsQuery, analyticsRegion, analyticsMaxResults);
@@ -220,7 +388,7 @@ export default function App() {
           isRealData: true,
           totalAnalyzed: channels.length,
           channels,
-          searchSummary: `"${analyticsQuery}" 실시간 YouTube 데이터 (${channels.length}개 채널)`
+          searchSummary: `"${analyticsQuery}" 실시간 YouTube 데이터 (${channels.length}개 채널)`,
         });
       } catch (err: any) {
         setAnalyticsError(`YouTube API 오류: ${err.message}`);
@@ -233,20 +401,77 @@ export default function App() {
         isRealData: false,
         totalAnalyzed: channels.length,
         channels,
-        searchSummary: `"${analyticsQuery}" 시뮬레이션 데이터 (API 키 입력 시 실데이터)`
+        searchSummary: `"${analyticsQuery}" 시뮬레이션 데이터 (API 키 입력 시 실데이터)`,
       });
       setIsAnalyticsLoading(false);
     }
   };
 
-  const handleAnalyticsSort = (field: string) => {
-    if (analyticsSortField === field) {
-      setAnalyticsSortDir(analyticsSortDir === "asc" ? "desc" : "asc");
+  const handleVideoSearch = async () => {
+    if (!videoQuery.trim()) return;
+    setIsVideoLoading(true);
+    setVideoError(null);
+    if (apiKey.trim()) {
+      try {
+        const videos = await fetchRealVideos(apiKey.trim(), videoQuery, videoRegion, videoMaxResults);
+        setVideoResult({
+          isRealData: true,
+          totalAnalyzed: videos.length,
+          videos,
+          searchSummary: `"${videoQuery}" 실시간 YouTube 데이터 (${videos.length}개 영상)`,
+        });
+      } catch (err: any) {
+        setVideoError(`YouTube API 오류: ${err.message}`);
+      } finally {
+        setIsVideoLoading(false);
+      }
     } else {
-      setAnalyticsSortField(field);
-      setAnalyticsSortDir("desc");
+      const videos = buildFallbackVideos(videoQuery, videoMaxResults);
+      setVideoResult({
+        isRealData: false,
+        totalAnalyzed: videos.length,
+        videos,
+        searchSummary: `"${videoQuery}" 시뮬레이션 데이터 (API 키 입력 시 실데이터)`,
+      });
+      setIsVideoLoading(false);
     }
   };
+
+  const handleAnalyticsSort = (field: string) => {
+    if (analyticsSortField === field) setAnalyticsSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setAnalyticsSortField(field); setAnalyticsSortDir("desc"); }
+  };
+
+  const handleVideoSort = (field: string) => {
+    if (videoSortField === field) setVideoSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setVideoSortField(field); setVideoSortDir("desc"); }
+  };
+
+  // ── Sorted/filtered lists ────────────────────────────────────────
+  const subRanges = [
+    { key: "all", label: "전체" },
+    { key: "under1k", label: "1천 미만" },
+    { key: "1k-10k", label: "1천~1만" },
+    { key: "10k-100k", label: "1만~10만" },
+    { key: "100k-1m", label: "10만~100만" },
+    { key: "over1m", label: "100만+" },
+  ];
+
+  const durRanges = [
+    { key: "all", label: "전체" },
+    { key: "shorts", label: "Shorts" },
+    { key: "short", label: "5분 미만" },
+    { key: "mid", label: "5~20분" },
+    { key: "long", label: "20분+" },
+  ];
+
+  const dateRanges = [
+    { key: "all", label: "전체" },
+    { key: "1w", label: "1주 이내" },
+    { key: "1m", label: "1달 이내" },
+    { key: "6m", label: "6개월 이내" },
+    { key: "1y", label: "1년 이내" },
+  ];
 
   const sortedChannels = useMemo(() => {
     if (!analyticsResult?.channels) return [];
@@ -265,61 +490,53 @@ export default function App() {
       });
     }
     return list.sort((a, b) => {
-      const valA = (a as any)[analyticsSortField];
-      const valB = (b as any)[analyticsSortField];
-      if (typeof valA === "number" && typeof valB === "number") {
-        return analyticsSortDir === "asc" ? valA - valB : valB - valA;
-      }
+      const vA = (a as any)[analyticsSortField];
+      const vB = (b as any)[analyticsSortField];
+      if (typeof vA === "number" && typeof vB === "number")
+        return analyticsSortDir === "asc" ? vA - vB : vB - vA;
       return analyticsSortDir === "asc"
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
+        ? String(vA).localeCompare(String(vB))
+        : String(vB).localeCompare(String(vA));
     });
   }, [analyticsResult, analyticsSortField, analyticsSortDir, analyticsGradeFilter, analyticsSubRange, analyticsHotOnly]);
 
-  const gradeColor = (grade: string) => {
-    if (grade === "A1") return "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
-    if (grade === "A2") return "text-green-400 bg-green-500/10 border-green-500/30";
-    if (grade === "A3") return "text-teal-400 bg-teal-500/10 border-teal-500/30";
-    if (grade === "B1") return "text-blue-400 bg-blue-500/10 border-blue-500/30";
-    if (grade === "B2") return "text-indigo-400 bg-indigo-500/10 border-indigo-500/30";
-    if (grade === "B3") return "text-purple-400 bg-purple-500/10 border-purple-500/30";
-    if (grade === "C1") return "text-yellow-400 bg-yellow-500/10 border-yellow-500/30";
-    if (grade === "C2") return "text-orange-400 bg-orange-500/10 border-orange-500/30";
-    return "text-red-400 bg-red-500/10 border-red-500/30";
-  };
+  const sortedVideos = useMemo(() => {
+    if (!videoResult?.videos) return [];
+    let list = [...videoResult.videos];
+    if (videoDurFilter !== "all") {
+      list = list.filter(v => {
+        const s = v.durationSeconds;
+        if (videoDurFilter === "shorts") return s <= 60;
+        if (videoDurFilter === "short") return s > 60 && s < 300;
+        if (videoDurFilter === "mid") return s >= 300 && s < 1200;
+        if (videoDurFilter === "long") return s >= 1200;
+        return true;
+      });
+    }
+    if (videoDateFilter !== "all") {
+      const now = Date.now();
+      list = list.filter(v => {
+        const age = now - new Date(v.publishedAt).getTime();
+        const days = age / (1000 * 60 * 60 * 24);
+        if (videoDateFilter === "1w") return days <= 7;
+        if (videoDateFilter === "1m") return days <= 30;
+        if (videoDateFilter === "6m") return days <= 180;
+        if (videoDateFilter === "1y") return days <= 365;
+        return true;
+      });
+    }
+    return list.sort((a, b) => {
+      const vA = (a as any)[videoSortField];
+      const vB = (b as any)[videoSortField];
+      if (typeof vA === "number" && typeof vB === "number")
+        return videoSortDir === "asc" ? vA - vB : vB - vA;
+      return videoSortDir === "asc"
+        ? String(vA).localeCompare(String(vB))
+        : String(vB).localeCompare(String(vA));
+    });
+  }, [videoResult, videoSortField, videoSortDir, videoDurFilter, videoDateFilter]);
 
-  const growthColor = (rate: string) => {
-    if (rate === "↑ 고성장") return "text-emerald-400";
-    if (rate === "→ 안정") return "text-blue-400";
-    return "text-red-400";
-  };
-
-  const freqColor = (freq: string) => {
-    if (freq === "매우 활발") return "text-emerald-400";
-    if (freq === "활발") return "text-green-400";
-    if (freq === "보통") return "text-blue-400";
-    if (freq === "비활발") return "text-yellow-400";
-    if (freq === "휴면") return "text-red-400";
-    return "text-gray-500";
-  };
-
-  const formatNumber = (n: number) => {
-    if (n >= 1000000000) return `${(n / 1000000000).toFixed(1)}B`;
-    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-    if (n >= 10000) return `${(n / 10000).toFixed(1)}만`;
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-    return String(n);
-  };
-
-  const subRanges = [
-    { key: "all", label: "전체" },
-    { key: "under1k", label: "1천 미만" },
-    { key: "1k-10k", label: "1천~1만" },
-    { key: "10k-100k", label: "1만~10만" },
-    { key: "100k-1m", label: "10만~100만" },
-    { key: "over1m", label: "100만+" },
-  ];
-
+  // ── Render ────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans flex flex-col">
       <Header />
@@ -331,7 +548,7 @@ export default function App() {
           <Key className="w-4 h-4 text-emerald-400 shrink-0" />
           <div className="flex-1">
             <p className="text-xs font-bold text-gray-200 mb-0.5">YouTube API 키</p>
-            <p className="text-[10px] text-gray-500">입력하면 실시간 채널 데이터를 조회합니다. 브라우저에만 저장되며 외부로 전송되지 않습니다.</p>
+            <p className="text-[10px] text-gray-500">입력하면 실시간 데이터를 조회합니다. 브라우저에만 저장되며 외부로 전송되지 않습니다.</p>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -357,306 +574,579 @@ export default function App() {
           </div>
         </div>
 
-        {/* Hero */}
-        <div className="bg-gradient-to-r from-gray-950 to-emerald-950/20 border border-emerald-500/10 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-600/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
-          <div className="space-y-2 relative z-10 max-w-2xl">
-            <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase">
-              <BarChart3 className="w-3 h-3" /> 채널 분석 대시보드
-            </span>
-            <h2 className="text-2xl font-bold text-white leading-tight">
-              YouTube <span className="text-emerald-400">채널 분析 스프레드시트</span>
-            </h2>
-            <p className="text-xs text-gray-400 leading-relaxed">
-              키워드로 채널을 검색해 구독자 등급·성장률·활동성·수익 가능 여부를 한 눈에 분析합니다.
-            </p>
-          </div>
-          <div className="shrink-0 flex flex-col items-end gap-2">
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border ${
-              analyticsResult?.isRealData
-                ? "bg-emerald-950/40 text-emerald-400 border-emerald-500/25"
-                : "bg-slate-900 text-gray-400 border-gray-700"
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${analyticsResult?.isRealData ? "bg-emerald-400 animate-pulse" : "bg-gray-600"}`}></span>
-              {analyticsResult?.isRealData ? "실시간 데이터" : "시뮬레이션 모드"}
-            </div>
-            {analyticsResult?.isRealData && (
-              <p className="text-[10px] text-gray-500">업로드 날짜 조회 포함</p>
-            )}
-          </div>
-        </div>
-
-        {/* Search Form */}
-        <div className="bg-slate-900/50 border border-gray-800 rounded-2xl p-5 space-y-4">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Search className="w-4 h-4 text-emerald-400" /> 채널 검색 & 분析
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="md:col-span-2 flex flex-col gap-1">
-              <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">키워드</label>
-              <input
-                type="text"
-                value={analyticsQuery}
-                onChange={e => setAnalyticsQuery(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleChannelAnalytics()}
-                placeholder="예: 심리학, 재테크, 자기계발..."
-                className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 transition-all placeholder:text-gray-600"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">지역</label>
-              <select
-                value={analyticsRegion}
-                onChange={e => setAnalyticsRegion(e.target.value)}
-                className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 cursor-pointer"
-              >
-                <option value="ALL">전체</option>
-                <option value="KR">한국 (KR)</option>
-                <option value="US">미국 (US)</option>
-                <option value="JP">일본 (JP)</option>
-                <option value="GB">영국 (GB)</option>
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">결과 수</label>
-              <select
-                value={analyticsMaxResults}
-                onChange={e => setAnalyticsMaxResults(Number(e.target.value))}
-                className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 cursor-pointer"
-              >
-                <option value={10}>10개</option>
-                <option value={20}>20개</option>
-                <option value={30}>30개</option>
-                <option value={50}>50개</option>
-              </select>
-            </div>
-          </div>
+        {/* Tabs */}
+        <div className="flex gap-2 border-b border-gray-800 pb-0">
           <button
-            onClick={handleChannelAnalytics}
-            disabled={isAnalyticsLoading || !analyticsQuery.trim()}
-            className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-gray-600 text-white font-bold text-xs px-6 py-2.5 rounded-xl transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+            onClick={() => setActiveTab("channels")}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-bold border border-b-0 transition-all cursor-pointer ${
+              activeTab === "channels"
+                ? "bg-slate-900 text-emerald-400 border-gray-700"
+                : "bg-transparent text-gray-500 border-transparent hover:text-gray-300"
+            }`}
           >
-            {isAnalyticsLoading ? (
-              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 분析 중{apiKey ? " (업로드 날짜 포함)..." : "..."}</>
-            ) : (
-              <><BarChart3 className="w-3.5 h-3.5" /> 채널 분析 시작</>
-            )}
+            <BarChart3 className="w-4 h-4" /> 채널 분析
+          </button>
+          <button
+            onClick={() => setActiveTab("videos")}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-bold border border-b-0 transition-all cursor-pointer ${
+              activeTab === "videos"
+                ? "bg-slate-900 text-indigo-400 border-gray-700"
+                : "bg-transparent text-gray-500 border-transparent hover:text-gray-300"
+            }`}
+          >
+            <Video className="w-4 h-4" /> 영상 검색
           </button>
         </div>
 
-        {/* Error */}
-        {analyticsError && (
-          <div className="flex items-center gap-3 p-4 bg-red-950/30 border border-red-500/20 rounded-xl text-xs text-red-400">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{analyticsError}</span>
-          </div>
-        )}
+        {/* ══ CHANNEL TAB ═══════════════════════════════════════════════ */}
+        {activeTab === "channels" && (
+          <div className="space-y-6">
+            {/* Hero */}
+            <div className="bg-gradient-to-r from-gray-950 to-emerald-950/20 border border-emerald-500/10 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-600/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+              <div className="space-y-2 relative z-10 max-w-2xl">
+                <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase">
+                  <BarChart3 className="w-3 h-3" /> 채널 분析 대시보드
+                </span>
+                <h2 className="text-2xl font-bold text-white leading-tight">
+                  YouTube <span className="text-emerald-400">채널 분析 스프레드시트</span>
+                </h2>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  키워드로 채널을 검색해 구독자 등급·성장률·활동성·수익 가능 여부를 한 눈에 분析합니다.
+                </p>
+              </div>
+              <div className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border ${
+                analyticsResult?.isRealData
+                  ? "bg-emerald-950/40 text-emerald-400 border-emerald-500/25"
+                  : "bg-slate-900 text-gray-400 border-gray-700"
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${analyticsResult?.isRealData ? "bg-emerald-400 animate-pulse" : "bg-gray-600"}`}></span>
+                {analyticsResult?.isRealData ? "실시간 데이터" : "시뮬레이션 모드"}
+              </div>
+            </div>
 
-        {/* Results */}
-        {analyticsResult && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <span className="text-gray-400">
-                <span className="font-bold text-white">{sortedChannels.length}</span>개 채널 표시 중
-                {analyticsResult.totalAnalyzed !== sortedChannels.length && (
-                  <span className="text-gray-500"> (전체 {analyticsResult.totalAnalyzed}개)</span>
+            {/* Search Form */}
+            <div className="bg-slate-900/50 border border-gray-800 rounded-2xl p-5 space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Search className="w-4 h-4 text-emerald-400" /> 채널 검색 & 분析
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="md:col-span-2 flex flex-col gap-1">
+                  <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">키워드</label>
+                  <input
+                    type="text"
+                    value={analyticsQuery}
+                    onChange={e => setAnalyticsQuery(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleChannelAnalytics()}
+                    placeholder="예: 심리학, 재테크, 자기계발..."
+                    className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 transition-all placeholder:text-gray-600"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">지역</label>
+                  <select
+                    value={analyticsRegion}
+                    onChange={e => setAnalyticsRegion(e.target.value)}
+                    className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 cursor-pointer"
+                  >
+                    <option value="ALL">전체</option>
+                    <option value="KR">한국 (KR)</option>
+                    <option value="US">미국 (US)</option>
+                    <option value="JP">일본 (JP)</option>
+                    <option value="GB">영국 (GB)</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">결과 수</label>
+                  <select
+                    value={analyticsMaxResults}
+                    onChange={e => setAnalyticsMaxResults(Number(e.target.value))}
+                    className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 cursor-pointer"
+                  >
+                    <option value={10}>10개</option>
+                    <option value={20}>20개</option>
+                    <option value={30}>30개</option>
+                    <option value={50}>50개</option>
+                  </select>
+                </div>
+              </div>
+              <button
+                onClick={handleChannelAnalytics}
+                disabled={isAnalyticsLoading || !analyticsQuery.trim()}
+                className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-gray-600 text-white font-bold text-xs px-6 py-2.5 rounded-xl transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isAnalyticsLoading ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 분析 중{apiKey ? " (업로드 날짜 포함)..." : "..."}</>
+                ) : (
+                  <><BarChart3 className="w-3.5 h-3.5" /> 채널 분析 시작</>
                 )}
-                {" · "}
-                <span className="text-gray-500 italic">{analyticsResult.searchSummary}</span>
-              </span>
-              {!analyticsResult.isRealData && (
-                <span className="text-yellow-400 flex items-center gap-1 text-[10px]">
-                  <AlertCircle className="w-3 h-3" /> API 키 미입력 — 시뮬레이션 데이터
-                </span>
-              )}
+              </button>
             </div>
 
-            {/* Filter Rows */}
-            <div className="space-y-2">
-              {/* Grade Filter */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider w-16 shrink-0">
-                  <Filter className="w-3 h-3" /> 등급
-                </span>
-                {["all", "A", "B", "C"].map(g => (
-                  <button key={g} onClick={() => setAnalyticsGradeFilter(g)}
-                    className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                      analyticsGradeFilter === g
-                        ? g === "all" ? "bg-gray-700 text-white border-gray-500"
-                          : g === "A" ? "bg-emerald-600 text-white border-emerald-500"
-                          : g === "B" ? "bg-blue-600 text-white border-blue-500"
-                          : "bg-yellow-600 text-white border-yellow-500"
-                        : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
-                    }`}>
-                    {g === "all" ? "전체" : `${g}급`}
-                  </button>
-                ))}
-                <button onClick={() => setAnalyticsHotOnly(!analyticsHotOnly)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ml-1 ${
-                    analyticsHotOnly ? "bg-orange-600 text-white border-orange-500" : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
-                  }`}>
-                  <Flame className="w-3 h-3" /> 떡상만
-                </button>
+            {analyticsError && (
+              <div className="flex items-center gap-3 p-4 bg-red-950/30 border border-red-500/20 rounded-xl text-xs text-red-400">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{analyticsError}</span>
               </div>
+            )}
 
-              {/* Subscriber Range Filter */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider w-16 shrink-0">
-                  <Users className="w-3 h-3" /> 구독자
-                </span>
-                {subRanges.map(r => (
-                  <button key={r.key} onClick={() => setAnalyticsSubRange(r.key)}
-                    className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                      analyticsSubRange === r.key
-                        ? "bg-indigo-600 text-white border-indigo-500"
-                        : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
-                    }`}>
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {analyticsResult && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <span className="text-gray-400">
+                    <span className="font-bold text-white">{sortedChannels.length}</span>개 채널 표시 중
+                    {analyticsResult.totalAnalyzed !== sortedChannels.length && (
+                      <span className="text-gray-500"> (전체 {analyticsResult.totalAnalyzed}개)</span>
+                    )}
+                    {" · "}
+                    <span className="text-gray-500 italic">{analyticsResult.searchSummary}</span>
+                  </span>
+                  {!analyticsResult.isRealData && (
+                    <span className="text-yellow-400 flex items-center gap-1 text-[10px]">
+                      <AlertCircle className="w-3 h-3" /> API 키 미입력 — 시뮬레이션 데이터
+                    </span>
+                  )}
+                </div>
 
-            {/* Table */}
-            {sortedChannels.length === 0 ? (
-              <div className="text-center py-12 text-gray-500 text-sm">필터 조건에 맞는 채널이 없습니다.</div>
-            ) : (
-              <div className="rounded-xl border border-gray-800 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-slate-900/80 border-b border-gray-800">
-                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">#</th>
-                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap min-w-[160px]">채널</th>
-                        {[
-                          { key: "subscriberCount", label: "구독자" },
-                          { key: "gradeScore", label: "등급" },
-                          { key: "estimatedGrowthRate", label: "성장률" },
-                          { key: "viewCount", label: "총 조회수" },
-                          { key: "videoCount", label: "영상 수" },
-                          { key: "country", label: "지역" },
-                        ].map(col => (
-                          <th key={col.key} onClick={() => handleAnalyticsSort(col.key)}
-                            className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-white transition-colors select-none">
-                            <span className="flex items-center gap-1">
-                              {col.label}
-                              {analyticsSortField === col.key ? (
-                                analyticsSortDir === "desc" ? <ChevronDown className="w-3 h-3 text-emerald-400" /> : <ChevronUp className="w-3 h-3 text-emerald-400" />
-                              ) : (
-                                <ArrowUpDown className="w-3 h-3 opacity-30" />
-                              )}
-                            </span>
-                          </th>
-                        ))}
-                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">
-                          <span className="flex items-center gap-1"><Zap className="w-3 h-3" /> 활동성</span>
-                        </th>
-                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">
-                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> 최근 업로드</span>
-                        </th>
-                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">
-                          <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" /> 수익</span>
-                        </th>
-                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider">링크</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedChannels.map((ch, idx) => (
-                        <tr key={ch.channelId}
-                          className={`border-b border-gray-800/60 transition-colors hover:bg-slate-900/40 ${
-                            ch.estimatedGrowthRate === "↑ 고성장" ? "border-l-2 border-l-emerald-500/50" : ""
-                          }`}>
-                          <td className="px-3 py-3 text-gray-500">{idx + 1}</td>
-                          <td className="px-3 py-3">
-                            <div className="flex items-center gap-2">
-                              {ch.thumbnailUrl ? (
-                                <img src={ch.thumbnailUrl} alt="" className="w-7 h-7 rounded-full object-cover bg-slate-800 shrink-0" />
-                              ) : (
-                                <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center shrink-0">
-                                  <Users className="w-3.5 h-3.5 text-gray-600" />
+                {/* Filters */}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider w-16 shrink-0">
+                      <Filter className="w-3 h-3" /> 등급
+                    </span>
+                    {["all", "A", "B", "C"].map(g => (
+                      <button key={g} onClick={() => setAnalyticsGradeFilter(g)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          analyticsGradeFilter === g
+                            ? g === "all" ? "bg-gray-700 text-white border-gray-500"
+                              : g === "A" ? "bg-emerald-600 text-white border-emerald-500"
+                              : g === "B" ? "bg-blue-600 text-white border-blue-500"
+                              : "bg-yellow-600 text-white border-yellow-500"
+                            : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
+                        }`}>
+                        {g === "all" ? "전체" : `${g}급`}
+                      </button>
+                    ))}
+                    <button onClick={() => setAnalyticsHotOnly(!analyticsHotOnly)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ml-1 ${
+                        analyticsHotOnly ? "bg-orange-600 text-white border-orange-500" : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
+                      }`}>
+                      <Flame className="w-3 h-3" /> 떡상만
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider w-16 shrink-0">
+                      <Users className="w-3 h-3" /> 구독자
+                    </span>
+                    {subRanges.map(r => (
+                      <button key={r.key} onClick={() => setAnalyticsSubRange(r.key)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          analyticsSubRange === r.key
+                            ? "bg-indigo-600 text-white border-indigo-500"
+                            : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
+                        }`}>
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {sortedChannels.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 text-sm">필터 조건에 맞는 채널이 없습니다.</div>
+                ) : (
+                  <div className="rounded-xl border border-gray-800 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-900/80 border-b border-gray-800">
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">#</th>
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap min-w-[160px]">채널</th>
+                            {[
+                              { key: "subscriberCount", label: "구독자" },
+                              { key: "gradeScore", label: "등급" },
+                              { key: "estimatedGrowthRate", label: "성장률" },
+                              { key: "viewCount", label: "총 조회수" },
+                              { key: "videoCount", label: "영상 수" },
+                              { key: "country", label: "지역" },
+                            ].map(col => (
+                              <th key={col.key} onClick={() => handleAnalyticsSort(col.key)}
+                                className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-white transition-colors select-none">
+                                <span className="flex items-center gap-1">
+                                  {col.label}
+                                  {analyticsSortField === col.key ? (
+                                    analyticsSortDir === "desc" ? <ChevronDown className="w-3 h-3 text-emerald-400" /> : <ChevronUp className="w-3 h-3 text-emerald-400" />
+                                  ) : (
+                                    <ArrowUpDown className="w-3 h-3 opacity-30" />
+                                  )}
+                                </span>
+                              </th>
+                            ))}
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">
+                              <span className="flex items-center gap-1"><Zap className="w-3 h-3" /> 활동성</span>
+                            </th>
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">
+                              <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> 최근 업로드</span>
+                            </th>
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">
+                              <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" /> 수익</span>
+                            </th>
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider">링크</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedChannels.map((ch, idx) => (
+                            <tr key={ch.channelId}
+                              className={`border-b border-gray-800/60 transition-colors hover:bg-slate-900/40 ${
+                                ch.estimatedGrowthRate === "↑ 고성장" ? "border-l-2 border-l-emerald-500/50" : ""
+                              }`}>
+                              <td className="px-3 py-3 text-gray-500">{idx + 1}</td>
+                              <td className="px-3 py-3">
+                                <div className="flex items-center gap-2">
+                                  {ch.thumbnailUrl ? (
+                                    <img src={ch.thumbnailUrl} alt="" className="w-7 h-7 rounded-full object-cover bg-slate-800 shrink-0" />
+                                  ) : (
+                                    <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center shrink-0">
+                                      <Users className="w-3.5 h-3.5 text-gray-600" />
+                                    </div>
+                                  )}
+                                  <span className="font-semibold text-white leading-tight max-w-[140px] truncate" title={ch.channelTitle}>
+                                    {ch.channelTitle}
+                                  </span>
                                 </div>
-                              )}
-                              <span className="font-semibold text-white leading-tight max-w-[140px] truncate" title={ch.channelTitle}>
-                                {ch.channelTitle}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-3 font-bold text-white whitespace-nowrap">{formatNumber(ch.subscriberCount)}</td>
-                          <td className="px-3 py-3">
-                            <span className={`px-2 py-0.5 rounded-md text-[11px] font-black border ${gradeColor(ch.grade)}`}>{ch.grade}</span>
-                          </td>
-                          <td className={`px-3 py-3 font-semibold whitespace-nowrap ${growthColor(ch.estimatedGrowthRate)}`}>
-                            {ch.estimatedGrowthRate}
-                          </td>
-                          <td className="px-3 py-3 text-gray-300 whitespace-nowrap">{formatNumber(ch.viewCount)}</td>
-                          <td className="px-3 py-3 text-gray-300 whitespace-nowrap">{ch.videoCount.toLocaleString()}개</td>
-                          <td className="px-3 py-3">
-                            <span className="flex items-center gap-1 text-gray-400"><Globe2 className="w-3 h-3" />{ch.country}</span>
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            <span className={`text-[11px] font-bold ${freqColor(ch.uploadFrequency || "")}`}>
-                              {ch.uploadFrequency || "-"}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 text-gray-400 whitespace-nowrap text-[10px]">
-                            {relativeDate(ch.lastUploadDate || "")}
-                          </td>
-                          <td className="px-3 py-3">
-                            {ch.isMonetizable ? (
-                              <span className="flex items-center gap-1 text-emerald-400 text-[11px] font-bold">
-                                <DollarSign className="w-3 h-3" /> 가능
-                              </span>
-                            ) : (
-                              <span className="text-gray-600 text-[10px]">미달</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            {ch.channelUrl ? (
-                              <a href={ch.channelUrl} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 transition-colors">
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
-                            ) : (
-                              <span className="text-gray-700 text-[10px]">시뮬</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                              </td>
+                              <td className="px-3 py-3 font-bold text-white whitespace-nowrap">{formatNumber(ch.subscriberCount)}</td>
+                              <td className="px-3 py-3">
+                                <span className={`px-2 py-0.5 rounded-md text-[11px] font-black border ${gradeColor(ch.grade)}`}>{ch.grade}</span>
+                              </td>
+                              <td className={`px-3 py-3 font-semibold whitespace-nowrap ${growthColor(ch.estimatedGrowthRate)}`}>
+                                {ch.estimatedGrowthRate}
+                              </td>
+                              <td className="px-3 py-3 text-gray-300 whitespace-nowrap">{formatNumber(ch.viewCount)}</td>
+                              <td className="px-3 py-3 text-gray-300 whitespace-nowrap">{ch.videoCount.toLocaleString()}개</td>
+                              <td className="px-3 py-3">
+                                <span className="flex items-center gap-1 text-gray-400"><Globe2 className="w-3 h-3" />{ch.country}</span>
+                              </td>
+                              <td className="px-3 py-3 whitespace-nowrap">
+                                <span className={`text-[11px] font-bold ${freqColor(ch.uploadFrequency || "")}`}>
+                                  {ch.uploadFrequency || "-"}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-gray-400 whitespace-nowrap text-[10px]">
+                                {relativeDate(ch.lastUploadDate || "")}
+                              </td>
+                              <td className="px-3 py-3">
+                                {ch.isMonetizable ? (
+                                  <span className="flex items-center gap-1 text-emerald-400 text-[11px] font-bold">
+                                    <DollarSign className="w-3 h-3" /> 가능
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-600 text-[10px]">미달</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-3">
+                                {ch.channelUrl ? (
+                                  <a href={ch.channelUrl} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 transition-colors">
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                ) : (
+                                  <span className="text-gray-700 text-[10px]">시뮬</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Grade Legend */}
+                <div className="bg-slate-900/40 border border-gray-800 rounded-xl p-4">
+                  <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1">
+                    <Award className="w-3 h-3" /> 등급 기준표
+                  </h4>
+                  <div className="grid grid-cols-3 md:grid-cols-9 gap-2">
+                    {[
+                      { g: "A1", desc: "100만+ 고성장" }, { g: "A2", desc: "50만+" }, { g: "A3", desc: "10만+" },
+                      { g: "B1", desc: "5만+ 성장" }, { g: "B2", desc: "1만+" }, { g: "B3", desc: "5천+" },
+                      { g: "C1", desc: "1천+" }, { g: "C2", desc: "1천 미만" }, { g: "C3", desc: "정체·신생" },
+                    ].map(({ g, desc }) => (
+                      <div key={g} className="flex flex-col items-center gap-1 text-center">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${gradeColor(g)}`}>{g}</span>
+                        <span className="text-[9px] text-gray-500">{desc}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Grade Legend */}
-            <div className="bg-slate-900/40 border border-gray-800 rounded-xl p-4">
-              <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1">
-                <Award className="w-3 h-3" /> 등급 기준표
-              </h4>
-              <div className="grid grid-cols-3 md:grid-cols-9 gap-2">
-                {[
-                  { g: "A1", desc: "100만+ 고성장" }, { g: "A2", desc: "50만+" }, { g: "A3", desc: "10만+" },
-                  { g: "B1", desc: "5만+ 성장" }, { g: "B2", desc: "1만+" }, { g: "B3", desc: "5천+" },
-                  { g: "C1", desc: "1천+" }, { g: "C2", desc: "1천 미만" }, { g: "C3", desc: "정체·신생" },
-                ].map(({ g, desc }) => (
-                  <div key={g} className="flex flex-col items-center gap-1 text-center">
-                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${gradeColor(g)}`}>{g}</span>
-                    <span className="text-[9px] text-gray-500">{desc}</span>
-                  </div>
-                ))}
+            {!analyticsResult && !isAnalyticsLoading && !analyticsError && (
+              <div className="text-center py-16 space-y-3">
+                <div className="inline-flex p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+                  <BarChart3 className="w-8 h-8 text-emerald-400" />
+                </div>
+                <p className="text-gray-400 text-sm">키워드를 입력하고 <strong>채널 분析 시작</strong>을 눌러주세요.</p>
+                <p className="text-gray-600 text-xs">API 키 없이도 시뮬레이션 데이터로 작동합니다.</p>
               </div>
-            </div>
+            )}
           </div>
         )}
 
-        {/* Empty State */}
-        {!analyticsResult && !isAnalyticsLoading && !analyticsError && (
-          <div className="text-center py-16 space-y-3">
-            <div className="inline-flex p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
-              <BarChart3 className="w-8 h-8 text-emerald-400" />
+        {/* ══ VIDEO TAB ═════════════════════════════════════════════════ */}
+        {activeTab === "videos" && (
+          <div className="space-y-6">
+            {/* Hero */}
+            <div className="bg-gradient-to-r from-gray-950 to-indigo-950/20 border border-indigo-500/10 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-600/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+              <div className="space-y-2 relative z-10 max-w-2xl">
+                <span className="inline-flex items-center gap-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/25 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase">
+                  <Play className="w-3 h-3" /> 영상 검색 대시보드
+                </span>
+                <h2 className="text-2xl font-bold text-white leading-tight">
+                  YouTube <span className="text-indigo-400">영상 검색 스프레드시트</span>
+                </h2>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  키워드로 영상을 검색해 조회수·좋아요·영상 길이·게시일을 한 눈에 분析합니다.
+                </p>
+              </div>
+              <div className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border ${
+                videoResult?.isRealData
+                  ? "bg-indigo-950/40 text-indigo-400 border-indigo-500/25"
+                  : "bg-slate-900 text-gray-400 border-gray-700"
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${videoResult?.isRealData ? "bg-indigo-400 animate-pulse" : "bg-gray-600"}`}></span>
+                {videoResult?.isRealData ? "실시간 데이터" : "시뮬레이션 모드"}
+              </div>
             </div>
-            <p className="text-gray-400 text-sm">키워드를 입력하고 <strong>채널 분析 시작</strong>을 눌러주세요.</p>
-            <p className="text-gray-600 text-xs">API 키 없이도 시뮬레이션 데이터로 작동합니다.</p>
+
+            {/* Search Form */}
+            <div className="bg-slate-900/50 border border-gray-800 rounded-2xl p-5 space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Search className="w-4 h-4 text-indigo-400" /> 영상 검색 & 분析
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="md:col-span-2 flex flex-col gap-1">
+                  <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">키워드</label>
+                  <input
+                    type="text"
+                    value={videoQuery}
+                    onChange={e => setVideoQuery(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleVideoSearch()}
+                    placeholder="예: 심리학, 재테크, 자기계발..."
+                    className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500/50 transition-all placeholder:text-gray-600"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">지역</label>
+                  <select
+                    value={videoRegion}
+                    onChange={e => setVideoRegion(e.target.value)}
+                    className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500/50 cursor-pointer"
+                  >
+                    <option value="ALL">전체</option>
+                    <option value="KR">한국 (KR)</option>
+                    <option value="US">미국 (US)</option>
+                    <option value="JP">일본 (JP)</option>
+                    <option value="GB">영국 (GB)</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">결과 수</label>
+                  <select
+                    value={videoMaxResults}
+                    onChange={e => setVideoMaxResults(Number(e.target.value))}
+                    className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500/50 cursor-pointer"
+                  >
+                    <option value={10}>10개</option>
+                    <option value={20}>20개</option>
+                    <option value={30}>30개</option>
+                    <option value={50}>50개</option>
+                  </select>
+                </div>
+              </div>
+              <button
+                onClick={handleVideoSearch}
+                disabled={isVideoLoading || !videoQuery.trim()}
+                className="w-full md:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-gray-600 text-white font-bold text-xs px-6 py-2.5 rounded-xl transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isVideoLoading ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 검색 중...</>
+                ) : (
+                  <><Play className="w-3.5 h-3.5" /> 영상 검색 시작</>
+                )}
+              </button>
+            </div>
+
+            {videoError && (
+              <div className="flex items-center gap-3 p-4 bg-red-950/30 border border-red-500/20 rounded-xl text-xs text-red-400">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{videoError}</span>
+              </div>
+            )}
+
+            {videoResult && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <span className="text-gray-400">
+                    <span className="font-bold text-white">{sortedVideos.length}</span>개 영상 표시 중
+                    {videoResult.totalAnalyzed !== sortedVideos.length && (
+                      <span className="text-gray-500"> (전체 {videoResult.totalAnalyzed}개)</span>
+                    )}
+                    {" · "}
+                    <span className="text-gray-500 italic">{videoResult.searchSummary}</span>
+                  </span>
+                  {!videoResult.isRealData && (
+                    <span className="text-yellow-400 flex items-center gap-1 text-[10px]">
+                      <AlertCircle className="w-3 h-3" /> API 키 미입력 — 시뮬레이션 데이터
+                    </span>
+                  )}
+                </div>
+
+                {/* Filters */}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider w-16 shrink-0">
+                      <Clock className="w-3 h-3" /> 길이
+                    </span>
+                    {durRanges.map(r => (
+                      <button key={r.key} onClick={() => setVideoDurFilter(r.key)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          videoDurFilter === r.key
+                            ? r.key === "shorts" ? "bg-pink-600 text-white border-pink-500"
+                              : r.key === "short" ? "bg-yellow-600 text-white border-yellow-500"
+                              : r.key === "mid" ? "bg-blue-600 text-white border-blue-500"
+                              : r.key === "long" ? "bg-purple-600 text-white border-purple-500"
+                              : "bg-gray-700 text-white border-gray-500"
+                            : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
+                        }`}>
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider w-16 shrink-0">
+                      <Calendar className="w-3 h-3" /> 날짜
+                    </span>
+                    {dateRanges.map(r => (
+                      <button key={r.key} onClick={() => setVideoDateFilter(r.key)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          videoDateFilter === r.key
+                            ? "bg-indigo-600 text-white border-indigo-500"
+                            : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
+                        }`}>
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {sortedVideos.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 text-sm">필터 조건에 맞는 영상이 없습니다.</div>
+                ) : (
+                  <div className="rounded-xl border border-gray-800 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-900/80 border-b border-gray-800">
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">#</th>
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap min-w-[200px]">영상</th>
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap min-w-[120px]">채널</th>
+                            {[
+                              { key: "viewCount", label: "조회수" },
+                              { key: "likeCount", label: "좋아요" },
+                              { key: "commentCount", label: "댓글" },
+                              { key: "durationSeconds", label: "길이" },
+                              { key: "publishedAt", label: "게시일" },
+                            ].map(col => (
+                              <th key={col.key} onClick={() => handleVideoSort(col.key)}
+                                className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-white transition-colors select-none">
+                                <span className="flex items-center gap-1">
+                                  {col.label}
+                                  {videoSortField === col.key ? (
+                                    videoSortDir === "desc" ? <ChevronDown className="w-3 h-3 text-indigo-400" /> : <ChevronUp className="w-3 h-3 text-indigo-400" />
+                                  ) : (
+                                    <ArrowUpDown className="w-3 h-3 opacity-30" />
+                                  )}
+                                </span>
+                              </th>
+                            ))}
+                            <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider">링크</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedVideos.map((v, idx) => (
+                            <tr key={v.videoId}
+                              className="border-b border-gray-800/60 transition-colors hover:bg-slate-900/40">
+                              <td className="px-3 py-3 text-gray-500">{idx + 1}</td>
+                              <td className="px-3 py-3">
+                                <div className="flex items-center gap-2">
+                                  {v.thumbnailUrl ? (
+                                    <img src={v.thumbnailUrl} alt="" className="w-16 h-9 rounded object-cover bg-slate-800 shrink-0" />
+                                  ) : (
+                                    <div className="w-16 h-9 rounded bg-slate-800 flex items-center justify-center shrink-0">
+                                      <Play className="w-4 h-4 text-gray-600" />
+                                    </div>
+                                  )}
+                                  <span className="font-semibold text-white leading-tight max-w-[180px] line-clamp-2" title={v.title}>
+                                    {v.title}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-gray-300 whitespace-nowrap max-w-[120px] truncate" title={v.channelTitle}>
+                                {v.channelTitle}
+                              </td>
+                              <td className="px-3 py-3 font-bold text-white whitespace-nowrap">{formatNumber(v.viewCount)}</td>
+                              <td className="px-3 py-3 text-gray-300 whitespace-nowrap">
+                                <span className="flex items-center gap-1">
+                                  <ThumbsUp className="w-3 h-3 text-blue-400" />
+                                  {formatNumber(v.likeCount)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-gray-300 whitespace-nowrap">
+                                <span className="flex items-center gap-1">
+                                  <MessageSquare className="w-3 h-3 text-gray-400" />
+                                  {formatNumber(v.commentCount)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 whitespace-nowrap">
+                                <span className={`text-[11px] font-bold ${durColor(v.durationSeconds)}`}>
+                                  {v.isShort ? "⚡ " : ""}{v.durationLabel}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-gray-400 whitespace-nowrap text-[10px]">
+                                {relativeDate(v.publishedAt)}
+                              </td>
+                              <td className="px-3 py-3">
+                                {v.videoId.startsWith("demo_") ? (
+                                  <span className="text-gray-700 text-[10px]">시뮬</span>
+                                ) : (
+                                  <a href={`https://www.youtube.com/watch?v=${v.videoId}`} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 transition-colors">
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!videoResult && !isVideoLoading && !videoError && (
+              <div className="text-center py-16 space-y-3">
+                <div className="inline-flex p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20">
+                  <Video className="w-8 h-8 text-indigo-400" />
+                </div>
+                <p className="text-gray-400 text-sm">키워드를 입력하고 <strong>영상 검색 시작</strong>을 눌러주세요.</p>
+                <p className="text-gray-600 text-xs">API 키 없이도 시뮬레이션 데이터로 작동합니다.</p>
+              </div>
+            )}
           </div>
         )}
 

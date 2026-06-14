@@ -173,3 +173,25 @@ export interface ChannelAnalyticsResponse {
   channels: ChannelAnalyticsItem[];
   searchSummary: string;
 }
+
+export interface VideoSearchItem {
+  videoId: string;
+  title: string;
+  channelId: string;
+  channelTitle: string;
+  thumbnailUrl: string;
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+  durationSeconds: number;
+  durationLabel: string;
+  publishedAt: string;
+  isShort: boolean;
+}
+
+export interface VideoSearchResponse {
+  isRealData: boolean;
+  totalAnalyzed: number;
+  videos: VideoSearchItem[];
+  searchSummary: string;
+}
