@@ -162,6 +162,9 @@ export interface ChannelAnalyticsItem {
   geminiInsight: string;
   channelUrl: string;
   publishedAt: string;
+  lastUploadDate?: string;
+  uploadFrequency?: string;
+  isMonetizable?: boolean;
 }
 
 export interface ChannelAnalyticsResponse {

@@ -15,7 +15,10 @@ import {
   Award,
   Key,
   Eye,
-  EyeOff
+  EyeOff,
+  DollarSign,
+  Clock,
+  Zap
 } from "lucide-react";
 import Header from "./components/Header";
 import { ChannelAnalyticsItem, ChannelAnalyticsResponse } from "./types";
@@ -33,6 +36,7 @@ export default function App() {
   const [analyticsSortField, setAnalyticsSortField] = useState<string>("gradeScore");
   const [analyticsSortDir, setAnalyticsSortDir] = useState<"asc" | "desc">("desc");
   const [analyticsGradeFilter, setAnalyticsGradeFilter] = useState<string>("all");
+  const [analyticsSubRange, setAnalyticsSubRange] = useState<string>("all");
   const [analyticsHotOnly, setAnalyticsHotOnly] = useState<boolean>(false);
 
   const saveApiKey = (key: string) => {
@@ -63,6 +67,26 @@ export default function App() {
     return "↓ 정체";
   };
 
+  const calcUploadFrequency = (lastUploadDate: string): string => {
+    if (!lastUploadDate) return "정보 없음";
+    const days = Math.floor((Date.now() - new Date(lastUploadDate).getTime()) / (1000 * 60 * 60 * 24));
+    if (days <= 7) return "매우 활발";
+    if (days <= 30) return "활발";
+    if (days <= 90) return "보통";
+    if (days <= 180) return "비활발";
+    return "휴면";
+  };
+
+  const relativeDate = (dateStr: string): string => {
+    if (!dateStr) return "-";
+    const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+    if (days === 0) return "오늘";
+    if (days <= 7) return `${days}일 전`;
+    if (days <= 30) return `${Math.floor(days / 7)}주 전`;
+    if (days <= 365) return `${Math.floor(days / 30)}개월 전`;
+    return `${Math.floor(days / 365)}년 전`;
+  };
+
   const fetchRealChannels = async (key: string, query: string, region: string, maxResults: number): Promise<ChannelAnalyticsItem[]> => {
     const regionParam = region !== "ALL" ? `&regionCode=${region}` : "";
     const searchRes = await fetch(
@@ -78,16 +102,41 @@ export default function App() {
 
     const ids = items.map((i: any) => i.snippet.channelId).join(",");
     const detailRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet,brandingSettings&id=${ids}&key=${key}`
+      `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet,brandingSettings,contentDetails&id=${ids}&key=${key}`
     );
     const detailData = await detailRes.json();
+    const channelItems: any[] = detailData.items || [];
 
-    return (detailData.items || []).map((ch: any): ChannelAnalyticsItem => {
+    // Fetch latest upload date for each channel in parallel
+    const uploadResults = await Promise.allSettled(
+      channelItems.map(async (ch: any) => {
+        const uploadsId = ch.contentDetails?.relatedPlaylists?.uploads;
+        if (!uploadsId) return { channelId: ch.id, date: "" };
+        try {
+          const res = await fetch(
+            `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsId}&maxResults=1&key=${key}`
+          );
+          const data = await res.json();
+          const date = data.items?.[0]?.snippet?.publishedAt || "";
+          return { channelId: ch.id, date };
+        } catch {
+          return { channelId: ch.id, date: "" };
+        }
+      })
+    );
+
+    const uploadDateMap = new Map<string, string>();
+    uploadResults.forEach(r => {
+      if (r.status === "fulfilled") uploadDateMap.set(r.value.channelId, r.value.date);
+    });
+
+    return channelItems.map((ch: any): ChannelAnalyticsItem => {
       const subs = parseInt(ch.statistics?.subscriberCount || "0", 10);
       const views = parseInt(ch.statistics?.viewCount || "0", 10);
       const videos = parseInt(ch.statistics?.videoCount || "0", 10);
       const { grade, gradeScore } = assignGrade(subs, views, videos);
       const country = ch.snippet?.country || ch.brandingSettings?.channel?.country || "??";
+      const lastUploadDate = uploadDateMap.get(ch.id) || "";
       return {
         channelId: ch.id,
         channelTitle: ch.snippet?.title || "",
@@ -103,6 +152,9 @@ export default function App() {
         geminiInsight: `구독자 ${(subs / 10000).toFixed(1)}만명 · 총 영상 ${videos}개 · 평균 조회수 ${Math.floor(views / Math.max(videos, 1)).toLocaleString()}회`,
         channelUrl: `https://www.youtube.com/channel/${ch.id}`,
         publishedAt: ch.snippet?.publishedAt || "",
+        lastUploadDate,
+        uploadFrequency: calcUploadFrequency(lastUploadDate),
+        isMonetizable: subs >= 1000,
       };
     });
   };
@@ -123,12 +175,17 @@ export default function App() {
     ];
     const growths = ["↑ 고성장", "→ 안정", "↓ 정체"];
     const countries = ["KR", "US", "JP", "GB", "KR", "KR"];
+    const freqList = ["매우 활발", "활발", "보통", "비활발", "휴면"];
+    const daysAgoList = [3, 15, 60, 120, 300];
+
     return Array.from({ length: count }, (_, i) => {
       const g = gradeList[i % gradeList.length];
       const niche = niches[i % niches.length];
       const subs = g.subs + Math.floor(Math.random() * g.subs * 0.3);
       const views = subs * (3 + Math.random() * 5);
       const vids = 50 + Math.floor(Math.random() * 300);
+      const daysAgo = daysAgoList[i % daysAgoList.length];
+      const lastUploadDate = new Date(Date.now() - daysAgo * 86400000).toISOString();
       return {
         channelId: `demo_${i}`,
         channelTitle: `${query} ${niche} ${names[i % names.length]}`,
@@ -144,6 +201,9 @@ export default function App() {
         geminiInsight: `${niche} 분야의 ${g.grade}급 채널 — 구독자 ${(subs / 10000).toFixed(1)}만명`,
         channelUrl: "",
         publishedAt: new Date(Date.now() - i * 30 * 86400000).toISOString(),
+        lastUploadDate,
+        uploadFrequency: freqList[i % freqList.length],
+        isMonetizable: subs >= 1000,
       };
     });
   };
@@ -193,6 +253,17 @@ export default function App() {
     let list = [...analyticsResult.channels];
     if (analyticsGradeFilter !== "all") list = list.filter(c => c.grade.startsWith(analyticsGradeFilter));
     if (analyticsHotOnly) list = list.filter(c => c.estimatedGrowthRate === "↑ 고성장");
+    if (analyticsSubRange !== "all") {
+      list = list.filter(c => {
+        const s = c.subscriberCount;
+        if (analyticsSubRange === "under1k") return s < 1000;
+        if (analyticsSubRange === "1k-10k") return s >= 1000 && s < 10000;
+        if (analyticsSubRange === "10k-100k") return s >= 10000 && s < 100000;
+        if (analyticsSubRange === "100k-1m") return s >= 100000 && s < 1000000;
+        if (analyticsSubRange === "over1m") return s >= 1000000;
+        return true;
+      });
+    }
     return list.sort((a, b) => {
       const valA = (a as any)[analyticsSortField];
       const valB = (b as any)[analyticsSortField];
@@ -203,7 +274,7 @@ export default function App() {
         ? String(valA).localeCompare(String(valB))
         : String(valB).localeCompare(String(valA));
     });
-  }, [analyticsResult, analyticsSortField, analyticsSortDir, analyticsGradeFilter, analyticsHotOnly]);
+  }, [analyticsResult, analyticsSortField, analyticsSortDir, analyticsGradeFilter, analyticsSubRange, analyticsHotOnly]);
 
   const gradeColor = (grade: string) => {
     if (grade === "A1") return "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
@@ -223,6 +294,15 @@ export default function App() {
     return "text-red-400";
   };
 
+  const freqColor = (freq: string) => {
+    if (freq === "매우 활발") return "text-emerald-400";
+    if (freq === "활발") return "text-green-400";
+    if (freq === "보통") return "text-blue-400";
+    if (freq === "비활발") return "text-yellow-400";
+    if (freq === "휴면") return "text-red-400";
+    return "text-gray-500";
+  };
+
   const formatNumber = (n: number) => {
     if (n >= 1000000000) return `${(n / 1000000000).toFixed(1)}B`;
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -231,20 +311,29 @@ export default function App() {
     return String(n);
   };
 
+  const subRanges = [
+    { key: "all", label: "전체" },
+    { key: "under1k", label: "1천 미만" },
+    { key: "1k-10k", label: "1천~1만" },
+    { key: "10k-100k", label: "1만~10만" },
+    { key: "100k-1m", label: "10만~100만" },
+    { key: "over1m", label: "100만+" },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans flex flex-col">
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full space-y-6">
 
-        {/* API Key Input */}
+        {/* API Key */}
         <div className="bg-slate-900/60 border border-gray-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
           <Key className="w-4 h-4 text-emerald-400 shrink-0" />
           <div className="flex-1">
             <p className="text-xs font-bold text-gray-200 mb-0.5">YouTube API 키</p>
             <p className="text-[10px] text-gray-500">입력하면 실시간 채널 데이터를 조회합니다. 브라우저에만 저장되며 외부로 전송되지 않습니다.</p>
           </div>
-          <div className="relative flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <div className="relative">
               <input
                 type={showKey ? "text" : "password"}
@@ -279,10 +368,10 @@ export default function App() {
               YouTube <span className="text-emerald-400">채널 분析 스프레드시트</span>
             </h2>
             <p className="text-xs text-gray-400 leading-relaxed">
-              키워드로 채널을 검색해 구독자, 등급(A1~C3), 성장률을 실시간으로 분석합니다.
+              키워드로 채널을 검색해 구독자 등급·성장률·활동성·수익 가능 여부를 한 눈에 분析합니다.
             </p>
           </div>
-          <div className="shrink-0">
+          <div className="shrink-0 flex flex-col items-end gap-2">
             <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border ${
               analyticsResult?.isRealData
                 ? "bg-emerald-950/40 text-emerald-400 border-emerald-500/25"
@@ -291,6 +380,9 @@ export default function App() {
               <span className={`w-2 h-2 rounded-full ${analyticsResult?.isRealData ? "bg-emerald-400 animate-pulse" : "bg-gray-600"}`}></span>
               {analyticsResult?.isRealData ? "실시간 데이터" : "시뮬레이션 모드"}
             </div>
+            {analyticsResult?.isRealData && (
+              <p className="text-[10px] text-gray-500">업로드 날짜 조회 포함</p>
+            )}
           </div>
         </div>
 
@@ -316,7 +408,7 @@ export default function App() {
               <select
                 value={analyticsRegion}
                 onChange={e => setAnalyticsRegion(e.target.value)}
-                className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 transition-all cursor-pointer"
+                className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 cursor-pointer"
               >
                 <option value="ALL">전체</option>
                 <option value="KR">한국 (KR)</option>
@@ -330,7 +422,7 @@ export default function App() {
               <select
                 value={analyticsMaxResults}
                 onChange={e => setAnalyticsMaxResults(Number(e.target.value))}
-                className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 transition-all cursor-pointer"
+                className="bg-slate-950 border border-gray-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500/50 cursor-pointer"
               >
                 <option value={10}>10개</option>
                 <option value={20}>20개</option>
@@ -345,7 +437,7 @@ export default function App() {
             className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-gray-600 text-white font-bold text-xs px-6 py-2.5 rounded-xl transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
           >
             {isAnalyticsLoading ? (
-              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 분析 중...</>
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 분析 중{apiKey ? " (업로드 날짜 포함)..." : "..."}</>
             ) : (
               <><BarChart3 className="w-3.5 h-3.5" /> 채널 분析 시작</>
             )}
@@ -379,38 +471,49 @@ export default function App() {
               )}
             </div>
 
-            {/* Filter Bar */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
-                <Filter className="w-3 h-3" /> 등급 필터:
-              </span>
-              {["all", "A", "B", "C"].map(g => (
-                <button
-                  key={g}
-                  onClick={() => setAnalyticsGradeFilter(g)}
-                  className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                    analyticsGradeFilter === g
-                      ? g === "all" ? "bg-gray-700 text-white border-gray-500"
-                        : g === "A" ? "bg-emerald-600 text-white border-emerald-500"
-                        : g === "B" ? "bg-blue-600 text-white border-blue-500"
-                        : "bg-yellow-600 text-white border-yellow-500"
-                      : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
-                  }`}
-                >
-                  {g === "all" ? "전체" : `${g}급`}
+            {/* Filter Rows */}
+            <div className="space-y-2">
+              {/* Grade Filter */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider w-16 shrink-0">
+                  <Filter className="w-3 h-3" /> 등급
+                </span>
+                {["all", "A", "B", "C"].map(g => (
+                  <button key={g} onClick={() => setAnalyticsGradeFilter(g)}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                      analyticsGradeFilter === g
+                        ? g === "all" ? "bg-gray-700 text-white border-gray-500"
+                          : g === "A" ? "bg-emerald-600 text-white border-emerald-500"
+                          : g === "B" ? "bg-blue-600 text-white border-blue-500"
+                          : "bg-yellow-600 text-white border-yellow-500"
+                        : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
+                    }`}>
+                    {g === "all" ? "전체" : `${g}급`}
+                  </button>
+                ))}
+                <button onClick={() => setAnalyticsHotOnly(!analyticsHotOnly)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ml-1 ${
+                    analyticsHotOnly ? "bg-orange-600 text-white border-orange-500" : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
+                  }`}>
+                  <Flame className="w-3 h-3" /> 떡상만
                 </button>
-              ))}
-              <div className="ml-2">
-                <button
-                  onClick={() => setAnalyticsHotOnly(!analyticsHotOnly)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                    analyticsHotOnly
-                      ? "bg-orange-600 text-white border-orange-500"
-                      : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
-                  }`}
-                >
-                  <Flame className="w-3 h-3" /> 떡상 채널만
-                </button>
+              </div>
+
+              {/* Subscriber Range Filter */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex items-center gap-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wider w-16 shrink-0">
+                  <Users className="w-3 h-3" /> 구독자
+                </span>
+                {subRanges.map(r => (
+                  <button key={r.key} onClick={() => setAnalyticsSubRange(r.key)}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                      analyticsSubRange === r.key
+                        ? "bg-indigo-600 text-white border-indigo-500"
+                        : "bg-slate-900 text-gray-400 border-gray-700 hover:border-gray-500"
+                    }`}>
+                    {r.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -423,8 +526,8 @@ export default function App() {
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-slate-900/80 border-b border-gray-800">
-                        <th className="text-left px-4 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">#</th>
-                        <th className="text-left px-4 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap min-w-[180px]">채널</th>
+                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">#</th>
+                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap min-w-[160px]">채널</th>
                         {[
                           { key: "subscriberCount", label: "구독자" },
                           { key: "gradeScore", label: "등급" },
@@ -433,70 +536,81 @@ export default function App() {
                           { key: "videoCount", label: "영상 수" },
                           { key: "country", label: "지역" },
                         ].map(col => (
-                          <th
-                            key={col.key}
-                            onClick={() => handleAnalyticsSort(col.key)}
-                            className="text-left px-4 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-white transition-colors select-none"
-                          >
+                          <th key={col.key} onClick={() => handleAnalyticsSort(col.key)}
+                            className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-white transition-colors select-none">
                             <span className="flex items-center gap-1">
                               {col.label}
                               {analyticsSortField === col.key ? (
-                                analyticsSortDir === "desc"
-                                  ? <ChevronDown className="w-3 h-3 text-emerald-400" />
-                                  : <ChevronUp className="w-3 h-3 text-emerald-400" />
+                                analyticsSortDir === "desc" ? <ChevronDown className="w-3 h-3 text-emerald-400" /> : <ChevronUp className="w-3 h-3 text-emerald-400" />
                               ) : (
                                 <ArrowUpDown className="w-3 h-3 opacity-30" />
                               )}
                             </span>
                           </th>
                         ))}
-                        <th className="text-left px-4 py-3 text-gray-400 font-semibold uppercase tracking-wider min-w-[180px]">데이터 요약</th>
-                        <th className="text-left px-4 py-3 text-gray-400 font-semibold uppercase tracking-wider">링크</th>
+                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">
+                          <span className="flex items-center gap-1"><Zap className="w-3 h-3" /> 활동성</span>
+                        </th>
+                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> 최근 업로드</span>
+                        </th>
+                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider whitespace-nowrap">
+                          <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" /> 수익</span>
+                        </th>
+                        <th className="text-left px-3 py-3 text-gray-400 font-semibold uppercase tracking-wider">링크</th>
                       </tr>
                     </thead>
                     <tbody>
                       {sortedChannels.map((ch, idx) => (
-                        <tr
-                          key={ch.channelId}
+                        <tr key={ch.channelId}
                           className={`border-b border-gray-800/60 transition-colors hover:bg-slate-900/40 ${
                             ch.estimatedGrowthRate === "↑ 고성장" ? "border-l-2 border-l-emerald-500/50" : ""
-                          }`}
-                        >
-                          <td className="px-4 py-3 text-gray-500">{idx + 1}</td>
-                          <td className="px-4 py-3">
+                          }`}>
+                          <td className="px-3 py-3 text-gray-500">{idx + 1}</td>
+                          <td className="px-3 py-3">
                             <div className="flex items-center gap-2">
                               {ch.thumbnailUrl ? (
-                                <img src={ch.thumbnailUrl} alt="" className="w-8 h-8 rounded-full object-cover bg-slate-800 shrink-0" />
+                                <img src={ch.thumbnailUrl} alt="" className="w-7 h-7 rounded-full object-cover bg-slate-800 shrink-0" />
                               ) : (
-                                <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center shrink-0">
-                                  <Users className="w-4 h-4 text-gray-600" />
+                                <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center shrink-0">
+                                  <Users className="w-3.5 h-3.5 text-gray-600" />
                                 </div>
                               )}
-                              <span className="font-semibold text-white leading-tight max-w-[160px] truncate" title={ch.channelTitle}>
+                              <span className="font-semibold text-white leading-tight max-w-[140px] truncate" title={ch.channelTitle}>
                                 {ch.channelTitle}
                               </span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 font-bold text-white whitespace-nowrap">{formatNumber(ch.subscriberCount)}</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-0.5 rounded-md text-[11px] font-black border ${gradeColor(ch.grade)}`}>
-                              {ch.grade}
-                            </span>
+                          <td className="px-3 py-3 font-bold text-white whitespace-nowrap">{formatNumber(ch.subscriberCount)}</td>
+                          <td className="px-3 py-3">
+                            <span className={`px-2 py-0.5 rounded-md text-[11px] font-black border ${gradeColor(ch.grade)}`}>{ch.grade}</span>
                           </td>
-                          <td className={`px-4 py-3 font-semibold whitespace-nowrap ${growthColor(ch.estimatedGrowthRate)}`}>
+                          <td className={`px-3 py-3 font-semibold whitespace-nowrap ${growthColor(ch.estimatedGrowthRate)}`}>
                             {ch.estimatedGrowthRate}
                           </td>
-                          <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{formatNumber(ch.viewCount)}</td>
-                          <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{ch.videoCount.toLocaleString()}개</td>
-                          <td className="px-4 py-3">
-                            <span className="flex items-center gap-1 text-gray-400">
-                              <Globe2 className="w-3 h-3" />{ch.country}
+                          <td className="px-3 py-3 text-gray-300 whitespace-nowrap">{formatNumber(ch.viewCount)}</td>
+                          <td className="px-3 py-3 text-gray-300 whitespace-nowrap">{ch.videoCount.toLocaleString()}개</td>
+                          <td className="px-3 py-3">
+                            <span className="flex items-center gap-1 text-gray-400"><Globe2 className="w-3 h-3" />{ch.country}</span>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <span className={`text-[11px] font-bold ${freqColor(ch.uploadFrequency || "")}`}>
+                              {ch.uploadFrequency || "-"}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-gray-400 text-[10px] max-w-[200px]">
-                            <span className="line-clamp-2 leading-relaxed">{ch.geminiInsight}</span>
+                          <td className="px-3 py-3 text-gray-400 whitespace-nowrap text-[10px]">
+                            {relativeDate(ch.lastUploadDate || "")}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-3">
+                            {ch.isMonetizable ? (
+                              <span className="flex items-center gap-1 text-emerald-400 text-[11px] font-bold">
+                                <DollarSign className="w-3 h-3" /> 가능
+                              </span>
+                            ) : (
+                              <span className="text-gray-600 text-[10px]">미달</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3">
                             {ch.channelUrl ? (
                               <a href={ch.channelUrl} target="_blank" rel="noopener noreferrer"
                                 className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 transition-colors">
@@ -521,15 +635,9 @@ export default function App() {
               </h4>
               <div className="grid grid-cols-3 md:grid-cols-9 gap-2">
                 {[
-                  { g: "A1", desc: "100만+ 고성장" },
-                  { g: "A2", desc: "50만+" },
-                  { g: "A3", desc: "10만+" },
-                  { g: "B1", desc: "5만+ 성장" },
-                  { g: "B2", desc: "1만+" },
-                  { g: "B3", desc: "5천+" },
-                  { g: "C1", desc: "1천+" },
-                  { g: "C2", desc: "1천 미만" },
-                  { g: "C3", desc: "정체·신생" },
+                  { g: "A1", desc: "100만+ 고성장" }, { g: "A2", desc: "50만+" }, { g: "A3", desc: "10만+" },
+                  { g: "B1", desc: "5만+ 성장" }, { g: "B2", desc: "1만+" }, { g: "B3", desc: "5천+" },
+                  { g: "C1", desc: "1천+" }, { g: "C2", desc: "1천 미만" }, { g: "C3", desc: "정체·신생" },
                 ].map(({ g, desc }) => (
                   <div key={g} className="flex flex-col items-center gap-1 text-center">
                     <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${gradeColor(g)}`}>{g}</span>
